@@ -7,3 +7,10 @@ set(CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 
 add_subdirectory(src)
+
+# Only build tests if this is the top level cmake file i.e. we build this stand alone without user code
+#if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+    enable_testing()
+    add_subdirectory(test)
+#endif ()
+

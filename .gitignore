@@ -30,3 +30,7 @@ _deps
 /.idea
 /vscode
 
+# intellij IDEs
+cmake-build-debug/
+cmake-build-release/
+

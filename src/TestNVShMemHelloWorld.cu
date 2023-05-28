@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <cuda.h>
-#include <nvshmem.h>
-#include <nvshmemx.h>
+#include "nvshmem.h"
+#include "nvshmemx.h"
 
 __global__ void simple_shift(int *destination) {
     int mype = nvshmem_my_pe();

@@ -13,6 +13,17 @@ if(NOT DEFINED CMAKE_CUDA_STANDARD)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 endif()
 
+MESSAGE("NVSHMEM_PREFIX set to: '${NVSHMEM_PREFIX}'")
+find_package(NVSHMEM REQUIRED HINTS ${NVSHMEM_PREFIX}/lib/cmake/nvshmem)
+# TODO: NVSHMEM support team says, these must be set. But this produces an error
+# add_library(nvshmem ALIAS nvshmem::nvshmem) # if statically linking host and device library
+# add_library(nvshmem_host ALIAS nvshmem::nvshmem_host) # dynamically linked host library
+# add_library(nvshmem_device ALIAS nvshmem::nvshmem_device) # statically linked host library
+
+# TODO: should not be needed, but if not adding this, cudart and cuda_driver is not found
+add_library(CUDA::cudart SHARED IMPORTED)
+add_library(CUDA::cuda_driver SHARED IMPORTED)
+
 add_subdirectory(src)
 
 # Only build tests if this is the top level cmake file i.e. we build this stand alone without user code

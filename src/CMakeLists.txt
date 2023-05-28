@@ -1,6 +1,6 @@
 # test executable
 add_executable(helloworld TestNVShMemHelloWorld.cu)
-target_include_directories(helloworld ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+target_include_directories(helloworld PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 
 
 add_library(nvshmem-db SomeLibraryInterfaceFunctions.cpp)

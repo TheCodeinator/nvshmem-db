@@ -1,9 +1,18 @@
-cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
 project(nvshmem-db LANGUAGES CXX CUDA)
 
-set(CMAKE_CUDA_HOST_COMPILER /usr/local/cuda-12/bin/nvcc)
-set(CMAKE_CUDA_COMPILER /usr/local/cuda-12/bin/nvcc)
+set(NVSHMEM_PREFIX /opt/nvshmem)
+
+# Find the CUDA package
+find_package(CUDA 12.0 REQUIRED)
+
+# Set this to where your CUDA 12.0 is installed
+set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-12)
+
+# Set the CUDA compiler
+set(CMAKE_CUDA_COMPILER ${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc)
+set(CMAKE_CUDA_ARCHITECTURES 90)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CXX_STANDARD_REQUIRED ON)
@@ -15,14 +24,7 @@ endif()
 
 MESSAGE("NVSHMEM_PREFIX set to: '${NVSHMEM_PREFIX}'")
 find_package(NVSHMEM REQUIRED HINTS ${NVSHMEM_PREFIX}/lib/cmake/nvshmem)
-# TODO: NVSHMEM support team says, these must be set. But this produces an error
-# add_library(nvshmem ALIAS nvshmem::nvshmem) # if statically linking host and device library
-# add_library(nvshmem_host ALIAS nvshmem::nvshmem_host) # dynamically linked host library
-# add_library(nvshmem_device ALIAS nvshmem::nvshmem_device) # statically linked host library
-
-# TODO: should not be needed, but if not adding this, cudart and cuda_driver is not found
-add_library(CUDA::cudart SHARED IMPORTED)
-add_library(CUDA::cuda_driver SHARED IMPORTED)
+find_package(CUDAToolkit REQUIRED)
 
 add_subdirectory(src)
 

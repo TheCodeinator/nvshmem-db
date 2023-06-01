@@ -7,7 +7,7 @@ set(NVSHMEM_INCLUDE_DIR ${NVSHMEM_PREFIX}/include)
 MESSAGE("CUDA_INCLUDE_DIR = ${CUDA_INCLUDE_DIR}")
 MESSAGE("NVSHMEM_INCLUDE_DIR = ${NVSHMEM_INCLUDE_DIR}")
 
-link_directories(${NVSHMEM_PREFIX}/lib64)
+link_directories(${NVSHMEM_PREFIX}/lib)
 target_include_directories(helloworld PRIVATE ${NVSHMEM_INCLUDE_DIR})
 target_link_libraries(helloworld
         nvshmem::nvshmem

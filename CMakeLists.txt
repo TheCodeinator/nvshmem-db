@@ -9,7 +9,7 @@ MESSAGE("env:LD_LIBRARY_PATH = '$ENV{LD_LIBRARY_PATH}'")
 MESSAGE("env:LIBRARY_PATH = '$ENV{LIBRARY_PATH}'")
 
 set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-12)
-find_package(CUDAToolkit 12.0 REQUIRED)
+find_package(CUDAToolkit 12.0 REQUIRED) # Shouldn't be needed, but otherwise CUDA::cudart is not found
 set(CMAKE_CUDA_COMPILER ${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc)
 set(CMAKE_EXE_LINKER_FLAGS "-Wl,--whole-archive /opt/nvshmem/lib/libnvshmem.a -Wl,--no-whole-archive")
 set(CMAKE_CUDA_ARCHITECTURES 70)

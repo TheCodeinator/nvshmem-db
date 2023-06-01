@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
 project(nvshmem-db LANGUAGES CXX CUDA)
 
+find_package(CUDAToolkit 12.0)
+
 set(NVSHMEM_PREFIX /opt/nvshmem)
 MESSAGE("env:CUDA_PATH = '$ENV{CUDA_PATH}'")
 MESSAGE("env:PATH = '$ENV{PATH}'")
@@ -9,15 +11,8 @@ MESSAGE("env:LD_LIBRARY_PATH = '$ENV{LD_LIBRARY_PATH}'")
 MESSAGE("env:LIBRARY_PATH = '$ENV{LIBRARY_PATH}'")
 
 set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-12)
-find_package(CUDAToolkit 12.0 REQUIRED) # Shouldn't be needed, but otherwise CUDA::cudart is not found
 set(CMAKE_CUDA_COMPILER ${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc)
-set(CMAKE_EXE_LINKER_FLAGS "-Wl,--whole-archive /opt/nvshmem/lib/libnvshmem.a -Wl,--no-whole-archive")
 set(CMAKE_CUDA_ARCHITECTURES 70)
-message("CMAKE_CUDA_COMPILER = ${CMAKE_CUDA_COMPILER}")
-message("CUDA_TOOLKIT_ROOT_DIR = ${CUDA_TOOLKIT_ROOT_DIR}")
-
-set(CMAKE_CXX_STANDARD 17)
-set(CXX_STANDARD_REQUIRED ON)
 
 if (NOT DEFINED CMAKE_CUDA_STANDARD)
     set(CMAKE_CUDA_STANDARD 11)
@@ -26,8 +21,8 @@ endif ()
 
 MESSAGE("NVSHMEM_PREFIX set to: '${NVSHMEM_PREFIX}'")
 link_directories(${NVSHMEM_PREFIX}/lib)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -L${NVSHMEM_PREFIX}/lib")
 find_package(NVSHMEM REQUIRED HINTS ${NVSHMEM_PREFIX}/lib/cmake/nvshmem)
+add_library(nvshmem ALIAS nvshmem::nvshmem)
 
 add_subdirectory(src)
 

@@ -1,7 +1,14 @@
 # test executable
 
 add_executable(helloworld TestNVShMemHelloWorld.cu)
-target_include_directories(helloworld PRIVATE ${CUDA_INCLUDE_DIRS})
+
+set(CUDA_INCLUDE_DIR ${CUDA_TOOLKIT_ROOT_DIR}/include)
+set(NVSHMEM_INCLUDE_DIR ${NVSHMEM_PREFIX}/include)
+MESSAGE("CUDA_INCLUDE_DIR = ${CUDA_INCLUDE_DIR}")
+MESSAGE("NVSHMEM_INCLUDE_DIR = ${NVSHMEM_INCLUDE_DIR}")
+
+link_directories(${NVSHMEM_PREFIX}/lib64)
+target_include_directories(helloworld PRIVATE ${NVSHMEM_INCLUDE_DIR})
 target_link_libraries(helloworld
         nvshmem::nvshmem
         nvshmem::nvshmem_host
@@ -12,7 +19,7 @@ add_library(nvshmem-db SomeLibraryInterfaceFunctions.cu)
 
 include_directories(${CMAKE_CURRENT_DIRECTORY} ${CMAKE_SOURCE_DIR})
 
-target_include_directories(nvshmem-db PUBLIC ${CUDA_INCLUDE_DIRS})
+target_include_directories(nvshmem-db PUBLIC ${CUDA_INCLUDE_DIR})
 
 set_property(TARGET nvshmem-db PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_target_properties(nvshmem-db PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

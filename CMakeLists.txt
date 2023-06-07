@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
 
+set (CMAKE_CXX_STANDARD 20)
+
 project(nvshmem-db LANGUAGES CXX CUDA)
 
 find_package(CUDAToolkit 12.0)

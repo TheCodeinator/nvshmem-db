@@ -14,7 +14,7 @@ target_link_libraries(helloworld nvshmem)
 # Our library
 add_library(nvshmem-db SomeLibraryInterfaceFunctions.cu)
 
-include_directories(${CMAKE_CURRENT_DIRECTORY} ${CMAKE_SOURCE_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/inc)
 
 target_include_directories(nvshmem-db PUBLIC ${CUDA_INCLUDE_DIR})
 

@@ -7,12 +7,22 @@ int returnsFour() {
     return 4;
 }
 
+/**
+ * Variable for returning integers from cuda kernels to host code
+ */
 __device__ int intResult;
 
-struct ShuffleAllocation {
-    int *histogram;
-    char *symmMem;
-};
+__host__ int getIntResult() {
+    int ret{};
+    cudaMemcpyFromSymbol(&ret, "intResult", sizeof(ret), 0, cudaMemcpyDeviceToHost);
+}
+
+/**
+ * utility function to get the size of a histogram with a particular number of PEs
+ */
+__host__ __device__ inline int histSizeBytes(int nPes) {
+    return nPes * sizeof(int);
+}
 
 // distribution function mapping keys to node IDs
 __device__ void distribute(int key, int nPes, int &dest) {
@@ -37,7 +47,7 @@ __device__ void histLocalAtomic(char *localData,
         int dest{0};
         distribute(key, nPes, dest);
 
-        // increment corresponding index in histogram
+        // increment corresponding index in computeOffsets
         atomicAdd(hist + dest, 1);
     }
 }
@@ -52,20 +62,70 @@ __device__ void histGlobalColl(int nPes,
     }
 }
 
-__device__ int sequentialMax(int *hist, int nPes) {
-    int max = hist[0];
-    for (int i{1}; i < nPes; ++i) {
-        if (hist[i] > max) {
-            max = hist[i];
+
+/**
+ * exchanges all histograms, such that histograms then contains the histograms of all PEs starting from PE 0, ranging to PE n-1
+ * @param histograms pointer to symmetric memory where to put all histograms
+ * @param myHistogram pointer to symmetric memory where this histogram is located
+ */
+__device__ void exchangeHistograms(int *histograms,
+                                   int *myHistogram,
+                                   nvshmem_team_t team,
+                                   int nPes) {
+    assert(nvshmem_int_alltoall(team, histograms, myHistogram, nPes) == 0);
+}
+
+/**
+ * Computes a write-offset for each destination PE based on the histograms of each PE.
+ * For example, with 4 nodes (zero-indexed), node 3 needs to know the following offsets for its send operations:
+  offset(3->0) := 0->0 + 1->0 + 2->0
+  offset(3->1) := 0->1 + 1->1 + 2->1
+  offset(3->2) := 0->2 + 1->2 + 2->2
+  offset(3->3) := 0->3 + 1->3 + 2->3
+ */
+__device__ void offsetsFromHistograms(int nPes,
+                                      int thisPe,
+                                      int *histograms,
+                                      int *offsets) {
+    // TODO: parallelize using GPU threads
+    if (threadIdx.x == 0) {
+        for (int dest{0}; dest < nPes; ++dest) {     // offset for each destination
+            for (int pe{0}; pe < thisPe; ++pe) {
+                // for each PE get the number of tuples for this destination stored in the histogram
+                const int histStart = pe * nPes;
+                offsets[dest] += histograms[histStart + dest];
+            }
         }
     }
+}
+
+/**
+ * returns the maximum size of a destination partition based on histograms of all PEs,
+ * which is the maximum sum of all tuples that all PEs send to a destination.
+ */
+__device__ int maxPartitionSize(int *histograms, int nPes) {
+    // TODO: parallelize using GPU threads
+    int max = 0;
+
+    for (int dest{0}; dest < nPes; ++dest) { // for each destination
+        // compute sum of tuples going to this destination
+        int sumOfTuples = 0;
+        for (int pe{0}; pe < nPes; ++pe) { // for each pe sending to the destination
+            const int histStart = pe * nPes;
+            sumOfTuples += histograms[histStart + dest];
+        }
+        if (sumOfTuples > max) {
+            max = sumOfTuples;
+        }
+    }
+
     return max;
 }
 
 /**
-* Computes a global histogram of the data based on the shuffling destination over all nodes.
-* Puts the histogram into the device memory pointer hist.
-* Returns the maximum number of tuples per node, i.e. the maximum value in the histogram to the host code via
+* Computes a global computeOffsets of the data based on the shuffling destination over all nodes.
+* Puts the computeOffsets into the device memory pointer hist.
+* Returns the maximum number of tuples per node, i.e. the maximum value in the computeOffsets to the host code via
 * the device variable intResult.
  * @param localData device memory pointer to data local to this node
  * @param tupleSize size of one tuple
@@ -73,25 +133,36 @@ __device__ int sequentialMax(int *hist, int nPes) {
  * @param keyOffset position where to find the 4-byte integer key
  * @param team team used for nvshmem communication
  * @param nPes number of members in the team
- * @param hist device memory pointer to an int array of size nPes to store the histogram
+ * @param hist device memory pointer to an int array of size nPes to store the computeOffsets
  */
-__global__ void histogram(
+__global__ void computeOffsets(
         char *localData,
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,
         nvshmem_team_t team,
         int nPes,
-        int *hist) {
-    // compute local histogram
-    histLocalAtomic(localData, tupleSize, tupleCount, keyOffset, nPes, hist);
+        int thisPe,
+        int *histograms,
+        int *offsets) {
+    // local histogram will be part of the array. histograms are ordered by PE ID. Each histogram has nPes elements
+    int *myHistogram = histograms + (thisPe * nPes);
 
-    // global histogram
-    histGlobalColl(nPes, team, hist);
+    // compute local histogram for this PE
+    histLocalAtomic(localData, tupleSize, tupleCount, keyOffset, nPes, myHistogram);
+
+    // exchange histograms with other PEs
+    exchangeHistograms(histograms, myHistogram, team, nPes);
+
+    // compute offsets based on histograms
+    offsetsFromHistograms(nPes, thisPe, histograms, offsets);
+
+    // compute max output partition size (max value of histogram sums)
+    int size = maxPartitionSize(histograms, nPes);
 
     // return maximum to host via device variable
     if (threadIdx.x == 0) {
-        intResult = sequentialMax(hist, nPes);
+        intResult = size;
     }
 }
 
@@ -102,7 +173,7 @@ __global__ void shuffleWithHist(char *localData,
                                 nvshmem_team_t team,
                                 int nPes,
                                 int *hist) {
-    // compute steps to take0
+    // compute shuffle based on offsets
 
 }
 
@@ -122,34 +193,35 @@ __host__ void shuffle(
     const int nPes = nvshmem_team_n_pes(team);
     const int thisPe = nvshmem_team_my_pe(team);
 
-    // allocate device memory for the histogram
-    ShuffleAllocation alloc;
-    cudaMalloc(&alloc.histogram, nPes * sizeof(int));
+    // allocate symm. memory for the histograms of all PEs
+    // Each histogram contains nPes int elements. There is one computeOffsets for each of the nPes PEs
+    int *histograms = static_cast<int *>(nvshmem_malloc(nPes * histSizeBytes(nPes)));
 
-    // compute the histogram on the device
-    histogram<<<1, 1, 0, stream>>>(localData,
-                                   tupleSize,
-                                   tupleCount,
-                                   keyOffset,
-                                   team,
-                                   nPes,
-                                   alloc.histogram);
-    int maxTuplesPerNode = intResult;
+    // allocate private device memory for storing the write offsets;
+    // One write offset for each destination PE
+    int *offsets;
+    cudaMalloc(&offsets, nPes * sizeof(int));
 
-    // allocate symmetric memory with the correct size according to histogram return value
-    alloc.symmMem = (char *) nvshmem_malloc(maxTuplesPerNode * tupleSize);
+    // compute and exchange the histograms and compute the offsets for remote writing
+    computeOffsets<<<1, 1, 0, stream>>>(localData,
+                                        tupleSize,
+                                        tupleCount,
+                                        keyOffset,
+                                        team,
+                                        nPes,
+                                        thisPe,
+                                        histograms,
+                                        offsets);
 
-    // TODO: we do not need the global histogram.
-    //  Instead, we need to exchange all data (all-to-all) and then compute the send destinations for each node locally
-    //  i.e. with 4 nodes, node 4 needs to know the following offsets for its send operations:
-    //  4->1 := 1->1 + 2->1 + 3->1
-    //  4->2 := 1->2 + 2->2 + 3->2
-    //  4->3 := 1->3 + 2->3 + 3->3
-    //  4->4 := 1->4 + 2->4 + 3->4
-    //  Note that although it is symmetric memory, each PE will only receive the tuples that have the destination to itself,
-    //  => So the offset is a sum of only the number of tuples that every node sends to that destination
+    int maxPartitionSize = getIntResult(); // save and rename return value of computeOffsets function
 
-    // TODO: launch new kernel with the histogram (still in device mem) and the allocated symmetric memory
-    // That kernel then should have everything at hand to do the data shuffling using nvshmem put and non-overlapping offsets
+    // histograms no longer required since offsets have been calculated => release corresponding symm. memory
+    nvshmem_free(histograms);
+
+    // allocate symmetric memory with the correct size according to computeOffsets return value
+    char *symmMem = static_cast<char *>(nvshmem_malloc(maxPartitionSize * tupleSize));
+
+    // TODO: launch new kernel with the computeOffsets (still in device mem) and the allocated symmetric memory
+    //  That kernel then should have everything at hand to do the data shuffling using nvshmem put and non-overlapping offsets
 
 }

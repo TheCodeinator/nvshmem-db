@@ -62,6 +62,19 @@ __device__ int sequentialMax(int *hist, int nPes) {
     return max;
 }
 
+/**
+* Computes a global histogram of the data based on the shuffling destination over all nodes.
+* Puts the histogram into the device memory pointer hist.
+* Returns the maximum number of tuples per node, i.e. the maximum value in the histogram to the host code via
+* the device variable intResult.
+ * @param localData device memory pointer to data local to this node
+ * @param tupleSize size of one tuple
+ * @param tupleCount number of tuples
+ * @param keyOffset position where to find the 4-byte integer key
+ * @param team team used for nvshmem communication
+ * @param nPes number of members in the team
+ * @param hist device memory pointer to an int array of size nPes to store the histogram
+ */
 __global__ void histogram(
         char *localData,
         uint16_t tupleSize,
@@ -76,12 +89,21 @@ __global__ void histogram(
     // global histogram
     histGlobalColl(nPes, team, hist);
 
-    // TODO: return histogram to caller to be reused in second kernel call
-
     // return maximum to host via device variable
     if (threadIdx.x == 0) {
         intResult = sequentialMax(hist, nPes);
     }
+}
+
+__global__ void shuffleWithHist(char *localData,
+                                uint16_t tupleSize,
+                                uint64_t tupleCount,
+                                uint8_t keyOffset,
+                                nvshmem_team_t team,
+                                int nPes,
+                                int *hist) {
+    // compute steps to take0
+
 }
 
 // TODO: use tree-based sum reduction for computing the histograms and the sums if possible:
@@ -95,10 +117,10 @@ __host__ void shuffle(
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,
-        nvshmem_team_t team,
-        int nPes,
-        int thisPe) {
+        nvshmem_team_t team) {
 
+    const int nPes = nvshmem_team_n_pes(team);
+    const int thisPe = nvshmem_team_my_pe(team);
 
     // allocate device memory for the histogram
     ShuffleAllocation alloc;
@@ -114,8 +136,18 @@ __host__ void shuffle(
                                    alloc.histogram);
     int maxTuplesPerNode = intResult;
 
-    // allocate symmetric memory with the correct size accoring to histogram return value
+    // allocate symmetric memory with the correct size according to histogram return value
     alloc.symmMem = (char *) nvshmem_malloc(maxTuplesPerNode * tupleSize);
+
+    // TODO: we do not need the global histogram.
+    //  Instead, we need to exchange all data (all-to-all) and then compute the send destinations for each node locally
+    //  i.e. with 4 nodes, node 4 needs to know the following offsets for its send operations:
+    //  4->1 := 1->1 + 2->1 + 3->1
+    //  4->2 := 1->2 + 2->2 + 3->2
+    //  4->3 := 1->3 + 2->3 + 3->3
+    //  4->4 := 1->4 + 2->4 + 3->4
+    //  Note that although it is symmetric memory, each PE will only receive the tuples that have the destination to itself,
+    //  => So the offset is a sum of only the number of tuples that every node sends to that destination
 
     // TODO: launch new kernel with the histogram (still in device mem) and the allocated symmetric memory
     // That kernel then should have everything at hand to do the data shuffling using nvshmem put and non-overlapping offsets

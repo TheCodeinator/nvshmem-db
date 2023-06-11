@@ -15,6 +15,7 @@ __device__ int intResult;
 __host__ int getIntResult() {
     int ret{};
     cudaMemcpyFromSymbol(&ret, "intResult", sizeof(ret), 0, cudaMemcpyDeviceToHost);
+    return ret;
 }
 
 /**
@@ -122,6 +123,11 @@ __device__ int maxPartitionSize(int *histograms, int nPes) {
     return max;
 }
 
+struct ComputeOffsetsResult {
+    int maxPartitionSize;
+    int thisPartitionSize;
+};
+
 /**
 * Computes a global computeOffsets of the data based on the shuffling destination over all nodes.
 * Puts the computeOffsets into the device memory pointer hist.
@@ -144,7 +150,8 @@ __global__ void computeOffsets(
         int nPes,
         int thisPe,
         int *histograms,
-        int *offsets) {
+        int *offsets,
+        ComputeOffsetsResult *offsetsResult) {
     // local histogram will be part of the array. histograms are ordered by PE ID. Each histogram has nPes elements
     int *myHistogram = histograms + (thisPe * nPes);
 
@@ -158,12 +165,9 @@ __global__ void computeOffsets(
     offsetsFromHistograms(nPes, thisPe, histograms, offsets);
 
     // compute max output partition size (max value of histogram sums)
-    int size = maxPartitionSize(histograms, nPes);
+    offsetsResult->maxPartitionSize = maxPartitionSize(histograms, nPes);
 
-    // return maximum to host via device variable
-    if (threadIdx.x == 0) {
-        intResult = size;
-    }
+    // TODO: fill thisPartitionSize
 }
 
 __global__ void shuffleWithHist(char *localData,
@@ -190,8 +194,8 @@ __host__ void shuffle(
         uint8_t keyOffset,
         nvshmem_team_t team) {
 
-    const int nPes = nvshmem_team_n_pes(team);
-    const int thisPe = nvshmem_team_my_pe(team);
+    int nPes = nvshmem_team_n_pes(team);
+    int thisPe = nvshmem_team_my_pe(team);
 
     // allocate symm. memory for the histograms of all PEs
     // Each histogram contains nPes int elements. There is one computeOffsets for each of the nPes PEs
@@ -202,24 +206,31 @@ __host__ void shuffle(
     int *offsets;
     cudaMalloc(&offsets, nPes * sizeof(int));
 
-    // compute and exchange the histograms and compute the offsets for remote writing
-    computeOffsets<<<1, 1, 0, stream>>>(localData,
-                                        tupleSize,
-                                        tupleCount,
-                                        keyOffset,
-                                        team,
-                                        nPes,
-                                        thisPe,
-                                        histograms,
-                                        offsets);
+    // allocate private device memory for the result of the computeOffsets function
+    ComputeOffsetsResult offsetsResult{};
+    ComputeOffsetsResult *offsetsResultDevice;
+    cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult));
 
-    int maxPartitionSize = getIntResult(); // save and rename return value of computeOffsets function
+    // TODO: launch using NVSHMEM launch API
+
+    void *args[] = {&localData, &tupleSize, &tupleCount, &keyOffset, &team, &nPes,
+                    &thisPe, &histograms, &offsets, &offsetsResultDevice};
+    dim3 dimBlock(1); // TODO: adjust dimensions
+    dim3 dimGrid(1);  // TODO: adjust dimensions
+
+    // TODO: need to set sharedMem in launch?
+    // compute and exchange the histograms and compute the offsets for remote writing
+    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, args, 0, 0);
+    cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
+
+    // get result from kernel launch
+    cudaMemcpy(&offsetsResult, offsetsResultDevice, sizeof(ComputeOffsetsResult), cudaMemcpyDeviceToHost);
 
     // histograms no longer required since offsets have been calculated => release corresponding symm. memory
     nvshmem_free(histograms);
 
-    // allocate symmetric memory with the correct size according to computeOffsets return value
-    char *symmMem = static_cast<char *>(nvshmem_malloc(maxPartitionSize * tupleSize));
+    // allocate symmetric memory big enough to fit the largest partition
+    char *symmMem = static_cast<char *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
     // TODO: launch new kernel with the computeOffsets (still in device mem) and the allocated symmetric memory
     //  That kernel then should have everything at hand to do the data shuffling using nvshmem put and non-overlapping offsets

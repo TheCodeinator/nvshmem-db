@@ -53,21 +53,25 @@ __device__ void histLocalAtomic(const char *const localData,
     }
 }
 
-__device__ void histGlobalColl(const int nPes,
-                               const nvshmem_team_t team,
-                               int *const hist) {
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid == 0) { // only communicate with one thread
-        // compute sum of all PE's histograms
-        nvshmem_int_sum_reduce(team, hist, hist, nPes);
-    }
-}
+//__device__ void histGlobalColl(const int nPes,
+//                               const nvshmem_team_t team,
+//                               int *const hist) {
+//    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+//    if (tid == 0) { // only communicate with one thread
+//        // compute sum of all PE's histograms
+//        nvshmem_int_sum_reduce(team, hist, hist, nPes);
+//    }
+//}
 
 
 /**
  * exchanges all histograms, such that histograms then contains the histograms of all PEs starting from PE 0, ranging to PE n-1
  * @param histograms pointer to symmetric memory where to put all histograms
  * @param myHistogram pointer to symmetric memory where this histogram is located
+ *
+ * Histogram layout is as follows (example with 3 PEs):
+ *  [0->0] [0->1] [0->2] [1->0] [1->1] [1->2] [2->0] [2->1] [2->2]
+ * | Histogram of PE0   | Histogram of PE1   | Histogram of PE2   |
  */
 __device__ void exchangeHistograms(int *const histograms,
                                    int *const myHistogram,

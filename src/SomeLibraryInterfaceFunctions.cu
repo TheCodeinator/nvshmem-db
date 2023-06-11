@@ -19,15 +19,29 @@ __host__ int getIntResult() {
 }
 
 /**
+ * simple swap function callable from device
+ */
+template<typename T>
+__device__ inline void devSwap(T &t1, T &t2) {
+    T tmp{t1};
+    t1 = t2;
+    t2 = tmp;
+}
+
+/**
  * utility function to get the size of a histogram with a particular number of PEs
  */
 __host__ __device__ inline int histSizeBytes(const int nPes) {
     return nPes * sizeof(int);
 }
 
-// distribution function mapping keys to node IDs
-__device__ void distribute(const int key, const int nPes, int &dest) {
-    dest = key % nPes;
+/**
+ * distribution function mapping keys to node IDs.
+ * Currently modulo. Could be anything instead
+ */
+__device__ int distribute(const char *const tuple, const int keyOffset, const int nPes) {
+    // assuming a 4-byte integer key
+    return *reinterpret_cast<const int *>(tuple + keyOffset) % nPes;
 }
 
 __device__ void histLocalAtomic(const char *const localData,
@@ -42,27 +56,15 @@ __device__ void histLocalAtomic(const char *const localData,
          i < tupleCount;
          i += blockDim.x * gridDim.x) {
 
-        // assuming a 4-byte integer key
-        // get the key of the i-th tuple
-        int key = reinterpret_cast<const int *>(localData)[i * tupleSize + keyOffset];
-        int dest{0};
-        distribute(key, nPes, dest);
+        // get pointer to the i-th tuple
+        const char *const tuplePtr = localData + (i * tupleSize);
+        // get destination PE ID of the tuple
+        const int dest = distribute(tuplePtr, keyOffset, nPes);
 
         // increment corresponding index in computeOffsets
         atomicAdd(hist + dest, 1);
     }
 }
-
-//__device__ void histGlobalColl(const int nPes,
-//                               const nvshmem_team_t team,
-//                               int *const hist) {
-//    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
-//    if (tid == 0) { // only communicate with one thread
-//        // compute sum of all PE's histograms
-//        nvshmem_int_sum_reduce(team, hist, hist, nPes);
-//    }
-//}
-
 
 /**
  * exchanges all histograms, such that histograms then contains the histograms of all PEs starting from PE 0, ranging to PE n-1
@@ -184,15 +186,91 @@ __global__ void computeOffsets(
     offsetsResult->thisPartitionSize = thisPartitionSize(histograms, nPes, thisPe);
 }
 
-__global__ void shuffleWithHist(const char *const localData,
-                                const uint16_t tupleSize,
-                                const uint64_t tupleCount,
-                                const uint8_t keyOffset,
-                                const nvshmem_team_t team,
-                                const int nPes,
-                                const int *const hist) {
-    // compute shuffle based on offsets
+__device__ void
+asyncSendData(const uint16_t tupleSize, const int nPes, const int *offsets, char *symmMem, char *buffersComp,
+              char *buffersBackup, int *const positionsLocal, int *const positionsRemote) {
+    // swap buffer pointers, backup buffer is free and becomes the new compute buffer
+    devSwap(buffersComp, buffersBackup);
+    // send data out
+    for (int pe{0}; pe < nPes; ++pe) {
+        // send data to remote PE
+        nvshmem_char_put_nbi(&symmMem[offsets[pe] + positionsRemote[pe]],
+                             &buffersBackup[pe],
+                             positionsLocal[pe] * tupleSize,
+                             pe);
+        // advance the position pointer for remote writing for this PE
+        positionsRemote[pe] += positionsLocal[pe];
+    }
 
+    // reset all local position pointers, since we now start with empty buffers again
+    memset(positionsLocal, 0, nPes * sizeof(int));
+}
+
+struct ShuffleWithOffsetsResult {
+    char *localPartition; // pointer to symmetric memory where the local partition after shuffling resides
+};
+
+__global__ void shuffleWithOffset(const char *const localData,
+                                  const uint16_t tupleSize,
+                                  const uint64_t tupleCount,
+                                  const uint8_t keyOffset,
+                                  const nvshmem_team_t team,
+                                  const int thisPe,
+                                  const int nPes,
+                                  const int *const offsets,
+                                  char *const symmMem,
+                                  ShuffleWithOffsetsResult *shuffleWithOffsetsResult) {
+    // TODO: parallelize scan using GPU threads
+
+    // as a first stupid implementation, we let one thread do everything
+    if (threadIdx.x == 0) {
+        // number of tuples per send buffer
+        const int bufferSize = 64;
+        // allocation for the send buffersComp; To buffersComp to overlap computation with transmission
+        char *buffersComp = new char[bufferSize * tupleSize * nPes];
+        char *buffersBackup = new char[bufferSize * tupleSize * nPes];
+        // current positions in send buffersComp
+        int *const positionsLocal = new int[nPes];
+        // current position writing to the remote locations
+        int *const positionsRemote = new int[nPes];
+
+        // iterate over all local data and compute the destination
+        for (int i{0}; i < tupleCount; ++i) {
+            // pointer to i-th local tuple
+            const char *const tuplePtr = localData + (i * tupleSize);
+            // get destination of tuple
+            const int dest = distribute(tuplePtr, keyOffset, nPes);
+            // copy tuple to respective output buffer
+            memcpy(buffersComp + (dest * bufferSize + positionsLocal[dest]), // to dest-th buffer with offset position
+                   tuplePtr,
+                   tupleSize);
+            // increment local buffer position for this PE
+            ++positionsLocal[dest];
+
+            // if there might be a full buffer, send data out
+            // We do not track all buffersComp individually, because we can only await all async operations at once anyways
+            if (tupleCount % bufferSize == 0) {
+                // wait for previous send to be completed => buffersBackup reusable after quiet finishes
+                nvshmem_quiet();
+                // asynchronously send the data to the destinations
+                asyncSendData(tupleSize, nPes, offsets, symmMem, buffersComp, buffersBackup, positionsLocal,
+                              positionsRemote);
+
+            }
+
+        }
+
+        // wait for completion of previous send
+        nvshmem_quiet();
+        // send remaining data in buffers
+        asyncSendData(tupleSize, nPes, offsets, symmMem, buffersComp, buffersBackup, positionsLocal,
+                      positionsRemote);
+        // wait for last send operation
+        nvshmem_quiet();
+
+        // return to caller a pointer to the local partition in symmetric device memory
+        shuffleWithOffsetsResult->localPartition = &symmMem[offsets[thisPe]];
+    }
 }
 
 // TODO: use tree-based sum reduction for computing the histograms and the sums if possible:
@@ -200,12 +278,13 @@ __global__ void shuffleWithHist(const char *const localData,
 //  or: https://www.cs.ucr.edu/~amazl001/teaching/cs147/S21/slides/13-Histogram.pdf
 //  or: https://developer.download.nvidia.com/compute/cuda/1.1-Beta/x86_website/projects/histogram64/doc/histogram.pdf
 
-__host__ void shuffle(
-        const cudaStream_t &stream,
+__host__ uint64_t shuffle(
         const char *const localData, // ptr to device data
+        char *&shuffledData, // pointer to nothing, this function will allocate on host mem for return value
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,
+        const cudaStream_t &stream,
         nvshmem_team_t team) {
 
     int nPes = nvshmem_team_n_pes(team);
@@ -225,14 +304,14 @@ __host__ void shuffle(
     ComputeOffsetsResult *offsetsResultDevice;
     cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult));
 
-    void *args[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset, &team, &nPes,
-                    &thisPe, &histograms, &offsets, &offsetsResultDevice};
+    void *CompOffsetsArgs[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset, &team, &nPes,
+                               &thisPe, &histograms, &offsets, &offsetsResultDevice};
     dim3 dimBlock(1); // TODO: adjust dimensions
     dim3 dimGrid(1);  // TODO: adjust dimensions
 
     // TODO: need to set sharedMem in launch?
     // compute and exchange the histograms and compute the offsets for remote writing
-    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, args, 0, 0);
+    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 0, 0);
     cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
@@ -242,9 +321,32 @@ __host__ void shuffle(
     nvshmem_free(histograms);
 
     // allocate symmetric memory big enough to fit the largest partition
-    char *symmMem = static_cast<char *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
+    char *const symmMem = static_cast<char *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
-    // TODO: launch new kernel with the computeOffsets (still in device mem) and the allocated symmetric memory
-    //  That kernel then should have everything at hand to do the data shuffling using nvshmem put and non-overlapping offsets
+    // allocate private device memory for the result of the shuffleWithOffsets function
+    ShuffleWithOffsetsResult shuffleResult{};
+    ShuffleWithOffsetsResult *shuffleResultDevice;
+    cudaMalloc(&shuffleResultDevice, sizeof(ShuffleWithOffsetsResult));
 
+    void *shuffleArgs[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset,
+                           &team, &thisPe, &nPes, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevice};
+
+    // execute the shuffle on the GPU
+    nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 0, 0);
+    cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
+
+    // get result from kernel launch
+    cudaMemcpy(&shuffleResult, shuffleResultDevice, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost);
+
+    // copy local shuffle result into CPU memory to return to user
+    // allocate CPU memory for the local partition to be returned to the caller
+    shuffledData = static_cast<char *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
+
+    cudaMemcpy(shuffledData, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
+               cudaMemcpyDeviceToHost);
+
+    // clean up symmetric memory
+    nvshmem_free(symmMem);
+
+    return offsetsResult.thisPartitionSize;
 }

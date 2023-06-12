@@ -5,7 +5,7 @@ add_dependencies(03_shuffleTest nvshmem-db)
 target_link_libraries(03_shuffleTest nvshmem-db)
 
 set_property(TARGET 03_shuffleTest PROPERTY POSITION_INDEPENDENT_CODE ON)
-set_target_properties(03_shuffleTest PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+#set_target_properties(03_shuffleTest PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 add_test(NAME 03_shuffleTest COMMAND 03_shuffleTest)
 

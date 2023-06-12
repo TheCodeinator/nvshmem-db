@@ -13,4 +13,4 @@ __host__ uint64_t shuffle(
         const cudaStream_t &stream,
         nvshmem_team_t team);
 
-#endif //NVSHMEM_DB_SHUFFLE_H
+#endif

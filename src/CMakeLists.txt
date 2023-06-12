@@ -3,7 +3,7 @@
 ############################################################
 add_library(nvshmem-db Shuffle.cu)
 
-target_link_libraries(nvshmem-db nvshmem)
+target_link_libraries(nvshmem-db PRIVATE nvshmem)
 
 
 set_property(TARGET nvshmem-db PROPERTY POSITION_INDEPENDENT_CODE ON)

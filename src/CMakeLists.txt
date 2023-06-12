@@ -1,21 +1,3 @@
-
-############################################################
-# test executable
-############################################################
-add_executable(helloworld TestNVShMemHelloWorld.cu)
-
-set(CUDA_INCLUDE_DIR ${CUDA_TOOLKIT_ROOT_DIR}/include)
-set(NVSHMEM_INCLUDE_DIR ${NVSHMEM_PREFIX}/include)
-MESSAGE("CUDA_INCLUDE_DIR = ${CUDA_INCLUDE_DIR}")
-MESSAGE("NVSHMEM_INCLUDE_DIR = ${NVSHMEM_INCLUDE_DIR}")
-
-link_directories(${NVSHMEM_PREFIX}/lib)
-target_include_directories(helloworld PRIVATE ${NVSHMEM_INCLUDE_DIR})
-target_link_libraries(helloworld nvshmem)
-
-set_property(TARGET helloworld PROPERTY POSITION_INDEPENDENT_CODE ON)
-set_target_properties(helloworld PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-
 ############################################################
 # Our library
 ############################################################

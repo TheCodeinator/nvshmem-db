@@ -1,4 +1,5 @@
 #include "SomeLibraryInterfaceFunctions.h"
+#include <iostream>
 
 // TODO: use testing framework such as Boost test, google test or catch2
 
@@ -8,4 +9,5 @@ int main() {
     } else {
         return -1;
     }
+
 }

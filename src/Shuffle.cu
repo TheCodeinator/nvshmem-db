@@ -1,8 +1,5 @@
 #include "Shuffle.h"
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 /**
  * Variable for returning integers from cuda kernels to host code
  */

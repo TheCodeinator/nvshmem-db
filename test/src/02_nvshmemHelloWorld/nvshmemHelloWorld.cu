@@ -11,7 +11,7 @@ __global__ void simple_shift(int *destination) {
     nvshmem_int_p(destination, mype, peer);
 }
 
-int check(int msg) {
+void check(int msg) {
     const int thisPe = nvshmem_my_pe();
     const int nPes = nvshmem_n_pes();
 

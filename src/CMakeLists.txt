@@ -14,7 +14,7 @@ set_property(TARGET nvshmem-db PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_target_properties(nvshmem-db PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 # declare public interface of our library
-set_target_properties(nvshmem-db PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/inc/SomeLibraryInterfaceFunctions.h)
+set_target_properties(nvshmem-db PROPERTIES PUBLIC_HEADER ${CMAKE_SOURCE_DIR}/inc/Shuffle.h)
 
 if (DEBUG)
     set(CMAKE_BUILD_TYPE Debug)

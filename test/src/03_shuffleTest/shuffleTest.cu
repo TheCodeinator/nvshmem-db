@@ -1,11 +1,4 @@
-#include "SomeLibraryInterfaceFunctions.h"
-
-// TODO: use testing framework such as Boost test, google test or catch2
-
-__global__ void deviceFunction() {
-    // call the shuffle function with some nonsense
-    shuffle(nullptr, 1, 1, 1, 1, 1, 1);
-}
+#include "Shuffle.h"
 
 int main() {
     int mype_node, msg;
@@ -18,7 +11,11 @@ int main() {
 
     int *destination = (int *) nvshmem_malloc(sizeof(int));
 
-    deviceFunction<<<1, 1, 0, stream>>>();
+    // TODO: call shuffle function with correct arguments and write test
+    // call shuffle function with stupidly false arguments
+    char* ptr;
+    shuffle(nullptr, ptr, 1, 1, 1, stream, NVSHMEM_TEAM_WORLD);
+
     nvshmemx_barrier_all_on_stream(stream);
     cudaMemcpyAsync(&msg, destination, sizeof(int), cudaMemcpyDeviceToHost, stream);
 

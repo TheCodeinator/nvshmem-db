@@ -26,6 +26,9 @@ link_directories(${NVSHMEM_PREFIX}/lib)
 find_package(NVSHMEM REQUIRED HINTS ${NVSHMEM_PREFIX}/lib/cmake/nvshmem)
 add_library(nvshmem ALIAS nvshmem::nvshmem)
 
+# add include directory to all subdirectories recursively
+include_directories(inc)
+
 add_subdirectory(src)
 
 # Only build tests if this is the top level cmake file i.e. we build this stand alone without user code

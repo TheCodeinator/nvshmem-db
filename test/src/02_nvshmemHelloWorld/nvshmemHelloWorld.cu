@@ -11,6 +11,14 @@ __global__ void simple_shift(int *destination) {
     nvshmem_int_p(destination, mype, peer);
 }
 
+int check(int msg) {
+    const int thisPe = nvshmem_my_pe();
+    const int nPes = nvshmem_n_pes();
+
+    int ringPredecessor = thisPe == 0 ? nPes - 1 : thisPe - 1;
+    assert(msg == ringPredecessor);
+}
+
 int main(void) {
     int mype_node, msg;
     cudaStream_t stream;
@@ -27,6 +35,8 @@ int main(void) {
     cudaMemcpyAsync(&msg, destination, sizeof(int), cudaMemcpyDeviceToHost, stream);
 
     cudaStreamSynchronize(stream);
+
+    check(msg);
     printf("%d: received message %d\n", nvshmem_my_pe(), msg);
 
     nvshmem_free(destination);

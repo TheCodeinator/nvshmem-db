@@ -1,7 +1,7 @@
 ############################################################
 # Our library
 ############################################################
-add_library(nvshmem-db SomeLibraryInterfaceFunctions.cu)
+add_library(nvshmem-db Shuffle.cu)
 
 include_directories(${CMAKE_SOURCE_DIR}/inc)
 

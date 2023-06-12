@@ -1,11 +1,9 @@
-#ifndef NVSHMEM_DB_SOMELIBRARYINTERFACEFUNCTIONS_H
-#define NVSHMEM_DB_SOMELIBRARYINTERFACEFUNCTIONS_H
+#ifndef NVSHMEM_DB_SHUFFLE_H
+#define NVSHMEM_DB_SHUFFLE_H
 
 #include <cuda.h>
 #include "nvshmem.h"
 #include "nvshmemx.h"
-
-int returnsFour();
 
 __device__ void shuffle(
         char* localData,
@@ -17,4 +15,4 @@ __device__ void shuffle(
         int thisPe
         );
 
-#endif //NVSHMEM_DB_SOMELIBRARYINTERFACEFUNCTIONS_H
+#endif //NVSHMEM_DB_SHUFFLE_H

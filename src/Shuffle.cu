@@ -1,11 +1,7 @@
-#include "SomeLibraryInterfaceFunctions.h"
+#include "Shuffle.h"
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
-
-int returnsFour() {
-    return 4;
-}
 
 /**
  * Variable for returning integers from cuda kernels to host code

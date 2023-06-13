@@ -1,5 +1,3 @@
-#project(Tests LANGUAGES CXX)
-
 # TODO: use unit testing framework such as Boost Test, Google Test or Catch2
 
 # add cpp files to the test cases

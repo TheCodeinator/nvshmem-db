@@ -44,9 +44,10 @@ if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
     add_subdirectory(test/src)
 endif ()
 
-if (DEBUG)
-    set(CMAKE_BUILD_TYPE Debug)
+if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+    MESSAGE("Setting debug build options.")
+
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb -DDEBUG")
-    add_compile_options( "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-src-in-ptx;-lineinfo>")
+    add_compile_options( "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-src-in-ptx;-lineinfo> -G")
     add_compile_definitions(-DDEBUG)
 endif ()

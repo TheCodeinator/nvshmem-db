@@ -311,9 +311,9 @@ __host__ ShuffleResult shuffle(
     dim3 dimBlock(1); // TODO: adjust dimensions
     dim3 dimGrid(1);  // TODO: adjust dimensions
 
-    // TODO: need to set sharedMem in launch?
+    // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the histograms and compute the offsets for remote writing
-    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 0, stream);
+    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 1024 * 4, stream);
     cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
@@ -334,7 +334,7 @@ __host__ ShuffleResult shuffle(
                            &team, &nPes, &thisPe, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevice};
 
     // execute the shuffle on the GPU
-    nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 0, stream);
+    nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 1024 * 4, stream);
     cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
 
     // get result from kernel launch

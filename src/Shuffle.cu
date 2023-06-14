@@ -299,12 +299,12 @@ __host__ ShuffleResult shuffle(
     // allocate private device memory for storing the write offsets;
     // One write offset for each destination PE
     int *offsets;
-    cudaMalloc(&offsets, nPes * sizeof(int));
+    CUDA_CHECK(cudaMalloc(&offsets, nPes * sizeof(int)));
 
     // allocate private device memory for the result of the computeOffsets function
     ComputeOffsetsResult offsetsResult{};
     ComputeOffsetsResult *offsetsResultDevice;
-    cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult));
+    CUDA_CHECK(cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult)));
 
     void *CompOffsetsArgs[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset, &team, &nPes,
                                &thisPe, &histograms, &offsets, &offsetsResultDevice};
@@ -313,11 +313,11 @@ __host__ ShuffleResult shuffle(
 
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the histograms and compute the offsets for remote writing
-    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 1024 * 4, stream);
-    cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
+    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 1024 * 4, stream));
+    CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
-    cudaMemcpy(&offsetsResult, offsetsResultDevice, sizeof(ComputeOffsetsResult), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(&offsetsResult, offsetsResultDevice, sizeof(ComputeOffsetsResult), cudaMemcpyDeviceToHost));
 
     // histograms no longer required since offsets have been calculated => release corresponding symm. memory
     nvshmem_free(histograms);
@@ -328,17 +328,17 @@ __host__ ShuffleResult shuffle(
     // allocate private device memory for the result of the shuffleWithOffsets function
     ShuffleWithOffsetsResult shuffleResult{};
     ShuffleWithOffsetsResult *shuffleResultDevicePtr;
-    cudaMalloc(&shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult));
+    CUDA_CHECK(cudaMalloc(&shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult)));
 
     void *shuffleArgs[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset,
                            &team, &nPes, &thisPe, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevicePtr};
 
     // execute the shuffle on the GPU
-    nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 1024 * 4, stream);
-    cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
+    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 1024 * 4, stream));
+    CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
-    cudaMemcpy(&shuffleResult, shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(&shuffleResult, shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost));
 
     // result returned to the user
     ShuffleResult result{};
@@ -348,8 +348,8 @@ __host__ ShuffleResult shuffle(
     result.tuples = static_cast<char *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
 
     // copy local shuffle result into CPU memory to return to user
-    cudaMemcpy(result.tuples, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
-               cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpy(result.tuples, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
+                            cudaMemcpyDeviceToHost));
 
     // clean up symmetric memory
     nvshmem_free(symmMem);

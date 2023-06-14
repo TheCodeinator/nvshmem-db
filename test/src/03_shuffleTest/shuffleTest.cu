@@ -1,16 +1,6 @@
 #include <iostream>
 #include "Shuffle.h"
 
-#define cudaCheckErr(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess)
-    {
-        fprintf(stderr,"Cuda err detected: %s %s %d\n", cudaGetErrorString(code), file, line);
-        if (abort) exit(code);
-    }
-}
-
 // configuration for this shuffle example
 constexpr uint64_t N_LOCAL_TUPLES = 10;
 constexpr uint16_t TUPLE_SIZE = 64;
@@ -30,10 +20,10 @@ char *createLocalTuples(int nPes, int thisPe) {
 
     // allocate device memory for the local tuples
     char *localTuplesGPU;
-    cudaCheckErr(cudaMalloc(&localTuplesGPU, N_LOCAL_TUPLES * TUPLE_SIZE));
+    CUDA_CHECK(cudaMalloc(&localTuplesGPU, N_LOCAL_TUPLES * TUPLE_SIZE));
 
     // copy tuples to device memory
-    cudaCheckErr(cudaMemcpy(localTuplesGPU, localTuplesCPU, localMemSize, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(localTuplesGPU, localTuplesCPU, localMemSize, cudaMemcpyHostToDevice));
 
     // free CPU memory
     free(localTuplesCPU);

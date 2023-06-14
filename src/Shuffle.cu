@@ -208,8 +208,8 @@ __global__ void shuffleWithOffset(const char *const localData,
                                   const uint64_t tupleCount,
                                   const uint8_t keyOffset,
                                   const nvshmem_team_t team,
-                                  const int thisPe,
                                   const int nPes,
+                                  const int thisPe,
                                   const int *const offsets,
                                   char *const symmMem,
                                   ShuffleWithOffsetsResult *shuffleWithOffsetsResult) {
@@ -313,7 +313,7 @@ __host__ ShuffleResult shuffle(
 
     // TODO: need to set sharedMem in launch?
     // compute and exchange the histograms and compute the offsets for remote writing
-    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 0, 0);
+    nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, CompOffsetsArgs, 0, stream);
     cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
@@ -331,10 +331,10 @@ __host__ ShuffleResult shuffle(
     cudaMalloc(&shuffleResultDevice, sizeof(ShuffleWithOffsetsResult));
 
     void *shuffleArgs[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset,
-                           &team, &thisPe, &nPes, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevice};
+                           &team, &nPes, &thisPe, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevice};
 
     // execute the shuffle on the GPU
-    nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 0, 0);
+    nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 0, stream);
     cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
 
     // get result from kernel launch

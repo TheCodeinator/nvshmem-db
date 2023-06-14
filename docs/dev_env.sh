@@ -19,4 +19,7 @@ if [[ "$DEV_ENV" == "NVSHMEM_DB" ]]; then
         source ~/software/modules-4.5.0/init/bash
         module use $HPCX_HOME/modulefiles
         module load hpcx-mt
+
+        # activate NVSHMEM debug output
+        export NVSHMEM_DEBUG=TRACE
 fi

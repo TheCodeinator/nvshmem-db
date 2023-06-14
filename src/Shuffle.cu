@@ -327,18 +327,18 @@ __host__ ShuffleResult shuffle(
 
     // allocate private device memory for the result of the shuffleWithOffsets function
     ShuffleWithOffsetsResult shuffleResult{};
-    ShuffleWithOffsetsResult *shuffleResultDevice;
-    cudaMalloc(&shuffleResultDevice, sizeof(ShuffleWithOffsetsResult));
+    ShuffleWithOffsetsResult *shuffleResultDevicePtr;
+    cudaMalloc(&shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult));
 
     void *shuffleArgs[] = {const_cast<char **>(&localData), &tupleSize, &tupleCount, &keyOffset,
-                           &team, &nPes, &thisPe, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevice};
+                           &team, &nPes, &thisPe, &offsets, const_cast<char **>(&symmMem), &shuffleResultDevicePtr};
 
     // execute the shuffle on the GPU
     nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 1024 * 4, stream);
     cudaDeviceSynchronize(); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
-    cudaMemcpy(&shuffleResult, shuffleResultDevice, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&shuffleResult, shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost);
 
     // result returned to the user
     ShuffleResult result{};

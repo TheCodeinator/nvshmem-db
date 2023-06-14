@@ -49,7 +49,7 @@ void callShuffle(cudaStream_t &stream, int nPes, int thisPe) {
 }
 
 int main() {
-    int nPes, thisPe, msg;
+    int nPes, thisPe;
     cudaStream_t stream;
 
     nvshmem_init();
@@ -58,17 +58,8 @@ int main() {
     cudaSetDevice(thisPe);
     cudaStreamCreate(&stream);
 
-    int *destination = (int *) nvshmem_malloc(sizeof(int));
-
     callShuffle(stream, nPes, thisPe);
 
-    nvshmemx_barrier_all_on_stream(stream);
-    cudaMemcpyAsync(&msg, destination, sizeof(int), cudaMemcpyDeviceToHost, stream);
-
-    cudaStreamSynchronize(stream);
-    printf("%d: received message %d\n", nvshmem_my_pe(), msg);
-
-    nvshmem_free(destination);
     nvshmem_finalize();
     return 0;
 }

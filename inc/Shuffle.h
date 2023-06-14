@@ -4,9 +4,13 @@
 #include <cuda.h>
 #include "nvshmem.h"
 
-__host__ uint64_t shuffle(
+struct ShuffleResult {
+    char *tuples;
+    uint64_t partitionSize;
+};
+
+__host__ ShuffleResult shuffle(
         const char *const localData,// ptr to device data
-        char *&shuffledData, // pointer to nothing, this function will allocate on host mem for return value
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,

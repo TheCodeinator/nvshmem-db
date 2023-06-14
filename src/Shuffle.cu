@@ -271,9 +271,18 @@ __global__ void shuffleWithOffset(const char *const localData,
 //  or: https://www.cs.ucr.edu/~amazl001/teaching/cs147/S21/slides/13-Histogram.pdf
 //  or: https://developer.download.nvidia.com/compute/cuda/1.1-Beta/x86_website/projects/histogram64/doc/histogram.pdf
 
-__host__ uint64_t shuffle(
+/**
+ * @param localData pointer to GPU memory where the local partition before shuffling resides
+ * @param shuffledData pointer for returning
+ * @param tupleSize
+ * @param tupleCount
+ * @param keyOffset
+ * @param stream
+ * @param team
+ * @return
+ */
+__host__ ShuffleResult shuffle(
         const char *const localData, // ptr to device data
-        char *&shuffledData, // pointer to nothing, this function will allocate on host mem for return value
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,
@@ -331,15 +340,19 @@ __host__ uint64_t shuffle(
     // get result from kernel launch
     cudaMemcpy(&shuffleResult, shuffleResultDevice, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost);
 
-    // copy local shuffle result into CPU memory to return to user
-    // allocate CPU memory for the local partition to be returned to the caller
-    shuffledData = static_cast<char *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
+    // result returned to the user
+    ShuffleResult result{};
+    result.partitionSize = offsetsResult.thisPartitionSize;
 
-    cudaMemcpy(shuffledData, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
+    // allocate CPU memory for the local partition to be returned to the caller
+    result.tuples = static_cast<char *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
+
+    // copy local shuffle result into CPU memory to return to user
+    cudaMemcpy(result.tuples, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
                cudaMemcpyDeviceToHost);
 
     // clean up symmetric memory
     nvshmem_free(symmMem);
 
-    return offsetsResult.thisPartitionSize;
+    return result;
 }

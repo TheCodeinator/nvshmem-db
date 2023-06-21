@@ -14,7 +14,6 @@ def plot_2d(X,Y,**kwargs):
     fig_name = kwargs["fig_name"]
     filetype = kwargs["filetype"]
 
-
     axs.plot(X,Y)
 
     plt.savefig(f"{directory}/{fig_name}.{filetype}")

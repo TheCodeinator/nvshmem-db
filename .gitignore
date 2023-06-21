@@ -27,8 +27,8 @@ _deps
 
 ## IDE Settings
 
-/.idea
-/vscode
+.idea
+vscode
 
 # intellij IDEs
 cmake-build-*/

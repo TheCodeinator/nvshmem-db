@@ -129,6 +129,7 @@ __device__ int thisPartitionSize(const int *const histograms, const int nPes, co
         const int histStart = pe * nPes;
         size += histograms[histStart + thisPe]; // add the num of tuples each PE has for this PE
     }
+    return size;
 }
 
 struct ComputeOffsetsResult {

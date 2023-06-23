@@ -250,7 +250,7 @@ __global__ void shuffleWithOffset(const uint8_t *const localData,
     if (threadIdx.x == 0) {
         // number of tuples per send buffer
         const int bufferSize = 64;
-        // allocation for the send buffersComp; To buffersComp to overlap computation with transmission
+        // allocation for the send buffers: Two buffersComp to overlap computation with transmission
         auto *buffersComp = new uint8_t[bufferSize * tupleSize * nPes];
         auto *buffersBackup = new uint8_t[bufferSize * tupleSize * nPes];
         // current positions in send buffersComp

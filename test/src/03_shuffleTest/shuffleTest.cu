@@ -7,33 +7,25 @@ struct shuffle_tuple {
 };
 
 // configuration for this shuffle example
-constexpr uint64_t N_LOCAL_TUPLES = 10;
 constexpr uint8_t KEY_OFFSET = 0; // key is first item in shuffle_tuple
 
 // creates local tuples in device memory
-shuffle_tuple *createLocalTuples(uint32_t nPes, uint32_t thisPe) {
-    constexpr uint64_t localMemSize = N_LOCAL_TUPLES * sizeof(shuffle_tuple);
+shuffle_tuple *createLocalTuples(const uint64_t *tupleIds, const size_t numTuples, const size_t offset) {
+    size_t localMemSize = numTuples * sizeof(shuffle_tuple);
     // allocate memory for tuples on host
     auto *const localTuplesCPU = static_cast<shuffle_tuple *>(malloc(localMemSize));
 
     // fill in ids of the tuples as ascending integers with an offset depending on the PE_id
-    const uint64_t offset = thisPe * N_LOCAL_TUPLES;
-    for (uint64_t i{0}; i < N_LOCAL_TUPLES; ++i) {
-        localTuplesCPU[i].id = offset + i;
+    for (size_t i{0}; i < numTuples; ++i) {
+        localTuplesCPU[i].id = tupleIds[i];
     }
 
     // allocate device memory for the local tuples
     shuffle_tuple *localTuplesGPU;
-    CUDA_CHECK(cudaMalloc(&localTuplesGPU, N_LOCAL_TUPLES * sizeof(shuffle_tuple)));
+    CUDA_CHECK(cudaMalloc(&localTuplesGPU, numTuples * sizeof(shuffle_tuple)));
 
     // copy tuples to device memory
     CUDA_CHECK(cudaMemcpy(localTuplesGPU, localTuplesCPU, localMemSize, cudaMemcpyHostToDevice));
-
-    // print local tuples
-
-    for (uint64_t i{0}; i < N_LOCAL_TUPLES; ++i) {
-        std::cout << "PE " << thisPe << " has shuffle_tuple " << i << " with key " << localTuplesCPU[i].id << std::endl;
-    }
 
     // free CPU memory
     free(localTuplesCPU);
@@ -41,12 +33,52 @@ shuffle_tuple *createLocalTuples(uint32_t nPes, uint32_t thisPe) {
     return localTuplesGPU;
 }
 
+__global__ void printGPUTuples(shuffle_tuple *tuples, uint64_t numTuples, int myPe) {
+    if (threadIdx.x == 0) {
+        printf("GPU PE %d start tuples: ", myPe);
+        for (uint64_t i{0}; i < numTuples; ++i) {
+            printf("%lu ", tuples[i].id);
+        }
+        printf("\n");
+    }
+}
+
+// before shuffle::
+// PE 0: 0 1 2 3
+// PE 1: 4 5 6 7 8 9 10
+
+// after shuffle:
+// PE 0: 0 2 4 6 8 10
+// PE 1: 1 3 5 7 9
 void callShuffle(cudaStream_t &stream, uint64_t nPes, uint64_t thisPe) {
-    auto *const localData{createLocalTuples(nPes, thisPe)};
+
+    size_t numLocalTuples;
+    size_t offsetTupleId;
+    int myPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
+
+    if (myPe == 0) {
+        numLocalTuples = 4;
+        offsetTupleId = 0;
+    } else {
+        numLocalTuples = 7;
+        offsetTupleId = 4;
+    }
+
+    auto *const tupleIds = static_cast<uint64_t *>(malloc(numLocalTuples * sizeof(uint64_t)));
+    for (uint64_t i{0}; i < numLocalTuples; ++i) {
+        tupleIds[i] = i + offsetTupleId;
+    }
+
+    // create local tuples
+    shuffle_tuple *const localData = createLocalTuples(tupleIds, numLocalTuples, offsetTupleId);
+
+    // print tuples on GPU
+
+    printGPUTuples<<<1, 1, 0, stream>>>(localData, numLocalTuples, myPe);
 
     // shuffle data
     const ShuffleResult result =
-        shuffle(reinterpret_cast<uint8_t *>(localData), sizeof(shuffle_tuple), N_LOCAL_TUPLES, KEY_OFFSET, stream, NVSHMEM_TEAM_WORLD);
+        shuffle(reinterpret_cast<uint8_t *>(localData), sizeof(shuffle_tuple), numLocalTuples, KEY_OFFSET, stream, NVSHMEM_TEAM_WORLD);
 
     std::cout << "PE " << thisPe << " has a partition of size " << result.partitionSize << " after shuffling." << std::endl;
 

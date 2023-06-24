@@ -10,7 +10,7 @@ struct shuffle_tuple {
 constexpr uint8_t KEY_OFFSET = 0; // key is first item in shuffle_tuple
 
 // creates local tuples in device memory
-shuffle_tuple *createLocalTuples(const uint64_t *tupleIds, const size_t numTuples, const size_t offset) {
+shuffle_tuple *createLocalTuples(const uint64_t *tupleIds, const size_t numTuples) {
     size_t localMemSize = numTuples * sizeof(shuffle_tuple);
     // allocate memory for tuples on host
     auto *const localTuplesCPU = static_cast<shuffle_tuple *>(malloc(localMemSize));
@@ -33,9 +33,9 @@ shuffle_tuple *createLocalTuples(const uint64_t *tupleIds, const size_t numTuple
     return localTuplesGPU;
 }
 
-__global__ void printGPUTuples(shuffle_tuple *tuples, uint64_t numTuples, int myPe) {
+__global__ void printGPUTuples(shuffle_tuple *tuples, uint64_t numTuples, int thisPe) {
     if (threadIdx.x == 0) {
-        printf("GPU PE %d start tuples: ", myPe);
+        printf("GPU PE %d start tuples: ", thisPe);
         for (uint64_t i{0}; i < numTuples; ++i) {
             printf("%lu ", tuples[i].id);
         }
@@ -70,7 +70,7 @@ void callShuffle(cudaStream_t &stream, uint64_t nPes, uint64_t thisPe) {
     }
 
     // create local tuples
-    shuffle_tuple *const localData = createLocalTuples(tupleIds, numLocalTuples, offsetTupleId);
+    shuffle_tuple *const localData = createLocalTuples(tupleIds, numLocalTuples);
 
     // print tuples on GPU
 

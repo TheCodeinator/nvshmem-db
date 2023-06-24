@@ -44,8 +44,8 @@ __global__ void printGPUTuples(shuffle_tuple *tuples, uint64_t numTuples, int th
 }
 
 // before shuffle::
-// PE 0: 0 1 2 3
-// PE 1: 4 5 6 7 8 9 10
+// PE 0: 0 1 2 3 4
+// PE 1: 5 6 7 8 9 10 11 12
 
 // after shuffle:
 // PE 0: 0 2 4 6 8 10
@@ -57,11 +57,11 @@ void callShuffle(cudaStream_t &stream, uint64_t nPes, uint64_t thisPe) {
     int myPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
 
     if (myPe == 0) {
-        numLocalTuples = 4;
+        numLocalTuples = 5;
         offsetTupleId = 0;
     } else {
-        numLocalTuples = 7;
-        offsetTupleId = 4;
+        numLocalTuples = 8;
+        offsetTupleId = 5;
     }
 
     auto *const tupleIds = static_cast<uint64_t *>(malloc(numLocalTuples * sizeof(uint64_t)));
@@ -84,10 +84,10 @@ void callShuffle(cudaStream_t &stream, uint64_t nPes, uint64_t thisPe) {
 
     // print tuples
 
-    for (uint64_t i{0}; i < result.partitionSize; ++i) {
-        std::cout << "PE " << thisPe << " has shuffle_tuple " << i << " with key "
-                  << reinterpret_cast<int *>(result.tuples)[i * sizeof(shuffle_tuple)] << std::endl;
-    }
+//    for (uint64_t i{0}; i < result.partitionSize; ++i) {
+//        std::cout << "PE " << thisPe << " has shuffle_tuple " << i << " with key "
+//                  << reinterpret_cast<int *>(result.tuples)[i * sizeof(shuffle_tuple)] << std::endl;
+//    }
 
     // check that correct tuples have been received
     for (uint64_t i{0}; i < result.partitionSize; ++i) {

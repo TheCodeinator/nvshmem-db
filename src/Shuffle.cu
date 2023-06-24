@@ -1,4 +1,5 @@
 #include "Shuffle.h"
+#include <unistd.h>
 
 /**
  * Variable for returning integers from cuda kernels to host code
@@ -161,12 +162,6 @@ __global__ void computeOffsets(
     // compute local histogram for this PE
     histLocalAtomic(localData, tupleSize, tupleCount, keyOffset, nPes, localHistogram);
 
-    // print globalHistograms
-    if (threadIdx.x == 0) {
-        printf("PE %d in team %d globalHistograms BEFORE exchange: %d %d %d %d\n", thisPe, team, globalHistograms[0], globalHistograms[1],
-               globalHistograms[2], globalHistograms[3]);
-    }
-
     // TODO: alltoall doesn't work, but fcollect does?
     assert(nvshmem_uint32_fcollect(team, globalHistograms, localHistogram, nPes) == 0);
 
@@ -180,7 +175,7 @@ __global__ void computeOffsets(
 
     // print offsets
     if (threadIdx.x == 0) {
-        printf("Offset to PE %d: ", thisPe);
+        printf("(Remote) offsets for PE %d: ", thisPe);
         for (int i{0}; i < nPes; ++i) {
             printf("%d ", offsets[i]);
         }
@@ -193,7 +188,8 @@ __global__ void computeOffsets(
     // compute size of this partition
     offsetsResult->thisPartitionSize = thisPartitionSize(globalHistograms, nPes, thisPe);
 
-    printf("PE %d: maxPartitionSize = %d, thisPartitionSize = %d\n", thisPe, offsetsResult->maxPartitionSize, offsetsResult->thisPartitionSize);
+    printf("PE %d: maxPartitionSize = %d, thisPartitionSize = %d\n", thisPe, offsetsResult->maxPartitionSize,
+           offsetsResult->thisPartitionSize);
 }
 
 __device__ void
@@ -228,8 +224,11 @@ __global__ void shuffleWithOffset(const uint8_t *const localData,
                                   const uint32_t nPes,
                                   const uint32_t thisPe,
                                   const uint32_t *const offsets,
-                                  uint8_t *const symmMem,
-                                  ShuffleWithOffsetsResult *shuffleWithOffsetsResult) {
+                                  uint8_t *const symmMem) {
+
+    printf("PE: %d shuffleWithOffset tupleSize: %d, tupleCount: %lu, keyOffset: %d, nPes: %d, thisPe: %d\n", thisPe, tupleSize, tupleCount,
+           keyOffset, nPes, thisPe);
+
     // TODO: parallelize scan using GPU threads
 
     // as a first stupid implementation, we let one thread do everything
@@ -279,7 +278,7 @@ __global__ void shuffleWithOffset(const uint8_t *const localData,
         nvshmem_quiet();
 
         // return to caller a pointer to the local partition in symmetric device memory
-        shuffleWithOffsetsResult->localPartition = &symmMem[offsets[thisPe]];
+//        shuffleWithOffsetsResult->localPartition = &symmMem[offsets[thisPe]];
     }
 }
 
@@ -287,6 +286,16 @@ __global__ void shuffleWithOffset(const uint8_t *const localData,
 //  https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf
 //  or: https://www.cs.ucr.edu/~amazl001/teaching/cs147/S21/slides/13-Histogram.pdf
 //  or: https://developer.download.nvidia.com/compute/cuda/1.1-Beta/x86_website/projects/histogram64/doc/histogram.pdf
+
+
+__global__ void print_tuple_result(const uint32_t thisPe, const uint8_t *const data, const uint16_t tupleSize, const uint64_t tupleCount) {
+    // print only the ID of the tuple
+    printf("PE %d result: ", thisPe);
+    for (uint64_t i{0}; i < tupleCount; ++i) {
+        printf("%lu ", reinterpret_cast<const uint64_t *const>(data)[i * tupleSize]);
+    }
+    printf("\n");
+}
 
 /**
  * @param localData pointer to GPU memory where the local partition before shuffling resides
@@ -309,7 +318,8 @@ __host__ ShuffleResult shuffle(
     int nPes = nvshmem_team_n_pes(team);
     int thisPe = nvshmem_team_my_pe(team);
     size_t globalHistogramsSize = nPes * nPes * sizeof(uint32_t);
-    printf("PE %d: shuffle with %d PEs with global hist size %zu\n", thisPe, nPes, globalHistogramsSize);
+
+    printf("PE: %d shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount, keyOffset);
 
     // allocate symm. memory for the globalHistograms of all PEs
     // Each histogram contains nPes int elements. There is one computeOffsets for each of the nPes PEs
@@ -332,47 +342,52 @@ __host__ ShuffleResult shuffle(
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the globalHistograms and compute the offsets for remote writing
     computeOffsets<<<1, 1, 1024 * 4, stream>>>(localData, tupleSize, tupleCount,
-                                                            keyOffset, team, nPes, thisPe, localHistogram,
-                                                            globalHistograms, offsets, offsetsResultDevice);
+                                               keyOffset, team, nPes, thisPe, localHistogram,
+                                               globalHistograms, offsets, offsetsResultDevice);
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
     CUDA_CHECK(cudaMemcpy(&offsetsResult, offsetsResultDevice, sizeof(ComputeOffsetsResult), cudaMemcpyDeviceToHost));
 
-    // globalHistograms no longer required since offsets have been calculated => release corresponding symm. memory
+    // histograms no longer required since offsets have been calculated => release corresponding symm. memory
     nvshmem_free(globalHistograms);
+    nvshmem_free(localHistogram);
+
 
     // allocate symmetric memory big enough to fit the largest partition
+    printf("PE: %d Allocating: %u bytes of symmetric memory\n", thisPe, offsetsResult.maxPartitionSize * tupleSize);
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
-    // allocate private device memory for the result of the shuffleWithOffsets function
-    ShuffleWithOffsetsResult shuffleResult{};
-    ShuffleWithOffsetsResult *shuffleResultDevicePtr;
-    CUDA_CHECK(cudaMalloc(&shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult)));
-
     void *shuffleArgs[] = {const_cast<uint8_t **>(&localData), &tupleSize, &tupleCount, &keyOffset,
-                           &team, &nPes, &thisPe, &offsets, const_cast<uint8_t **>(&symmMem), &shuffleResultDevicePtr};
+                           &team, &nPes, &thisPe, &offsets, const_cast<uint8_t **>(&symmMem)};
 
+    printf("Calling shuffleWithOffsets with %d PEs\n", nPes);
     // execute the shuffle on the GPU
     NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffleWithOffset, 1, 1, shuffleArgs, 1024 * 4, stream));
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
-    // get result from kernel launch
-    CUDA_CHECK(cudaMemcpy(&shuffleResult, shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost));
+    // print tuples after shuffle
 
-    // result returned to the user
+    usleep(500000 * thisPe);
+
+    print_tuple_result<<<1, 1, 1024 * 4, stream>>>(thisPe, symmMem, tupleSize, offsetsResult.thisPartitionSize);
+
+//    // get result from kernel launch
+//    CUDA_CHECK(cudaMemcpy(&shuffleResult, shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost));
+//
+//    // result returned to the user
     ShuffleResult result{};
-    result.partitionSize = offsetsResult.thisPartitionSize;
+//    result.partitionSize = offsetsResult.thisPartitionSize;
+//
+//    // allocate CPU memory for the local partition to be returned to the caller
+//    result.tuples = static_cast<uint8_t *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
+//
+//    // copy local shuffle result into CPU memory to return to user
+//    CUDA_CHECK(cudaMemcpy(result.tuples, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
+//                          cudaMemcpyDeviceToHost));
 
-    // allocate CPU memory for the local partition to be returned to the caller
-    result.tuples = static_cast<uint8_t *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
-
-    // copy local shuffle result into CPU memory to return to user
-    CUDA_CHECK(cudaMemcpy(result.tuples, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
-                          cudaMemcpyDeviceToHost));
-
-    // clean up symmetric memory
-    nvshmem_free(symmMem);
-
+//    // clean up symmetric memory
+//    nvshmem_free(symmMem);
+//
     return result;
 }

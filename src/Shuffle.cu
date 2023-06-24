@@ -22,13 +22,6 @@ __device__ inline void devSwap(T &t1, T &t2) {
 }
 
 /**
- * utility function to get the size of a histogram with a particular number of PEs
- */
-__host__ __device__ inline int histSizeBytes(const int nPes) {
-    return nPes * sizeof(int);
-}
-
-/**
  * distribution function mapping keys to node IDs.
  * Currently modulo. Could be anything instead
  */
@@ -60,19 +53,20 @@ __device__ void histLocalAtomic(const uint8_t *const localData,
 }
 
 /**
- * exchanges all histograms, such that histograms then contains the histograms of all PEs starting from PE 0, ranging to PE n-1
- * @param histograms pointer to symmetric memory where to put all histograms
+ * exchanges all globalHistograms, such that globalHistograms then contains the globalHistograms of all PEs starting from PE 0, ranging to PE n-1
+ * @param globalHistograms pointer to symmetric memory where to put all globalHistograms
  * @param myHistogram pointer to symmetric memory where this histogram is located
  *
  * Histogram layout is as follows (example with 3 PEs):
  *  [0->0] [0->1] [0->2] [1->0] [1->1] [1->2] [2->0] [2->1] [2->2]
  * | Histogram of PE0   | Histogram of PE1   | Histogram of PE2   |
  */
-__device__ void exchangeHistograms(uint32_t *const histograms,
+__device__ void exchangeHistograms(const nvshmem_team_t &team,
+                                   uint32_t *globalHistograms,
                                    uint32_t *const myHistogram,
-                                   const nvshmem_team_t &team,
-                                   const size_t nPes) {
-    assert(nvshmem_uint32_alltoall(team, histograms, myHistogram, nPes) == 0);
+                                   const size_t nPes,
+                                   const int thisPe) {
+
 }
 
 /**
@@ -133,8 +127,8 @@ __device__ uint32_t thisPartitionSize(const uint32_t *const histograms, const ui
 }
 
 struct ComputeOffsetsResult {
-    int maxPartitionSize;
-    int thisPartitionSize;
+    uint32_t maxPartitionSize;
+    uint32_t thisPartitionSize;
 };
 
 /**
@@ -151,43 +145,35 @@ struct ComputeOffsetsResult {
  * @param hist device memory pointer to an int array of size nPes to store the computeOffsets
  */
 __global__ void computeOffsets(
-    uint8_t *localData,
+    const uint8_t *const localData,
     const uint16_t tupleSize,
     const uint64_t tupleCount,
     const uint8_t keyOffset,
     const nvshmem_team_t team,
     const int nPes,
     const int thisPe,
+    uint32_t *localHistogram,
     uint32_t *const globalHistograms,
     uint32_t *const offsets,
     ComputeOffsetsResult *offsetsResult) {
     // local histogram will be part of the array. globalHistograms are ordered by PE ID. Each histogram has nPes elements
-    uint32_t *const myHistogram = globalHistograms + (thisPe * nPes);
 
     // compute local histogram for this PE
-    histLocalAtomic(localData, tupleSize, tupleCount, keyOffset, nPes, myHistogram);
+    histLocalAtomic(localData, tupleSize, tupleCount, keyOffset, nPes, localHistogram);
 
-    // print histogram
+    // print globalHistograms
     if (threadIdx.x == 0) {
-        printf("PE histogram %d: ", thisPe);
-        for (int i{0}; i < nPes; ++i) {
-            printf("%d ", myHistogram[i]);
-        }
-        printf("\n");
+        printf("PE %d in team %d globalHistograms BEFORE exchange: %d %d %d %d\n", thisPe, team, globalHistograms[0], globalHistograms[1],
+               globalHistograms[2], globalHistograms[3]);
     }
 
-    // exchange globalHistograms with other PEs
-    exchangeHistograms(globalHistograms, myHistogram, team, nPes);
+    // TODO: alltoall doesn't work, but fcollect does?
+    assert(nvshmem_uint32_fcollect(team, globalHistograms, localHistogram, nPes) == 0);
 
-    // print histogram
     if (threadIdx.x == 0) {
-        printf("PE histogram %d: ", thisPe);
-        for (int i{0}; i < nPes; ++i) {
-            printf("%d ", myHistogram[i]);
-        }
-        printf("\n");
+        printf("PE %d globalHistograms AFTER exchange: %d %d %d %d\n", thisPe, globalHistograms[0], globalHistograms[1],
+               globalHistograms[2], globalHistograms[3]);
     }
-
 
     // compute offsets based on globalHistograms
     offsetsFromHistograms(nPes, thisPe, globalHistograms, offsets);
@@ -219,9 +205,9 @@ asyncSendData(const uint16_t tupleSize, const uint32_t nPes, const uint32_t *off
     for (uint32_t pe{0}; pe < nPes; ++pe) {
         // send data to remote PE
         nvshmem_uint8_put_nbi(&symmMem[offsets[pe] + positionsRemote[pe]],
-                             &buffersBackup[pe],
-                             positionsLocal[pe] * tupleSize,
-                             pe);
+                              &buffersBackup[pe],
+                              positionsLocal[pe] * tupleSize,
+                              pe);
         // advance the position pointer for remote writing for this PE
         positionsRemote[pe] += positionsLocal[pe];
     }
@@ -313,46 +299,48 @@ __global__ void shuffleWithOffset(const uint8_t *const localData,
  * @return
  */
 __host__ ShuffleResult shuffle(
-        const uint8_t *const localData, // ptr to device data
-        uint16_t tupleSize,
-        uint64_t tupleCount,
-        uint8_t keyOffset,
-        const cudaStream_t &stream,
-        nvshmem_team_t team) {
+    const uint8_t *const localData, // ptr to device data
+    uint16_t tupleSize,
+    uint64_t tupleCount,
+    uint8_t keyOffset,
+    const cudaStream_t &stream,
+    nvshmem_team_t team) {
 
     int nPes = nvshmem_team_n_pes(team);
     int thisPe = nvshmem_team_my_pe(team);
-    printf("PE %d: shuffle with %d PEs\n", thisPe, nPes);
+    size_t globalHistogramsSize = nPes * nPes * sizeof(uint32_t);
+    printf("PE %d: shuffle with %d PEs with global hist size %zu\n", thisPe, nPes, globalHistogramsSize);
 
-    // allocate symm. memory for the histograms of all PEs
+    // allocate symm. memory for the globalHistograms of all PEs
     // Each histogram contains nPes int elements. There is one computeOffsets for each of the nPes PEs
-    int *histograms = static_cast<int *>(nvshmem_malloc(nPes * histSizeBytes(nPes)));
+    auto *globalHistograms = static_cast<uint32_t *>(nvshmem_malloc(globalHistogramsSize));
+
+    // allocate private device memory for storing the write offsets
+    // this is sent to all other PEs
+    auto *localHistogram = static_cast<uint32_t *>(nvshmem_malloc(nPes * sizeof(uint32_t)));
 
     // allocate private device memory for storing the write offsets;
     // One write offset for each destination PE
-    int *offsets;
-    CUDA_CHECK(cudaMalloc(&offsets, nPes * sizeof(int)));
+    uint32_t *offsets;
+    CUDA_CHECK(cudaMalloc(&offsets, nPes * sizeof(uint32_t)));
 
     // allocate private device memory for the result of the computeOffsets function
     ComputeOffsetsResult offsetsResult{};
     ComputeOffsetsResult *offsetsResultDevice;
     CUDA_CHECK(cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult)));
 
-    void *computeOffsetArgs[] = {const_cast<uint8_t **>(&localData), &tupleSize, &tupleCount, &keyOffset, &team, &nPes,
-                                 &thisPe, &histograms, &offsets, &offsetsResultDevice};
-    dim3 dimBlock(1); // TODO: adjust dimensions
-    dim3 dimGrid(1);  // TODO: adjust dimensions
-
     // TODO: What value should the "sharedMem" argument for the collective launch have?
-    // compute and exchange the histograms and compute the offsets for remote writing
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) computeOffsets, dimGrid, dimBlock, computeOffsetArgs, 1024 * 4, stream));
+    // compute and exchange the globalHistograms and compute the offsets for remote writing
+    computeOffsets<<<1, 1, 1024 * 4, stream>>>(localData, tupleSize, tupleCount,
+                                                            keyOffset, team, nPes, thisPe, localHistogram,
+                                                            globalHistograms, offsets, offsetsResultDevice);
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
     // get result from kernel launch
     CUDA_CHECK(cudaMemcpy(&offsetsResult, offsetsResultDevice, sizeof(ComputeOffsetsResult), cudaMemcpyDeviceToHost));
 
-    // histograms no longer required since offsets have been calculated => release corresponding symm. memory
-    nvshmem_free(histograms);
+    // globalHistograms no longer required since offsets have been calculated => release corresponding symm. memory
+    nvshmem_free(globalHistograms);
 
     // allocate symmetric memory big enough to fit the largest partition
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
@@ -366,7 +354,7 @@ __host__ ShuffleResult shuffle(
                            &team, &nPes, &thisPe, &offsets, const_cast<uint8_t **>(&symmMem), &shuffleResultDevicePtr};
 
     // execute the shuffle on the GPU
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffleWithOffset, dimGrid, dimBlock, shuffleArgs, 1024 * 4, stream));
+    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffleWithOffset, 1, 1, shuffleArgs, 1024 * 4, stream));
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
     // get result from kernel launch

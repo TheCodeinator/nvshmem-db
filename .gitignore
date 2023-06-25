@@ -33,3 +33,5 @@ _deps
 # intellij IDEs
 cmake-build-*/
 
+## Mac OS
+.DS_Store

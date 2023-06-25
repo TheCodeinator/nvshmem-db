@@ -404,22 +404,10 @@ __host__ ShuffleResult shuffle(
 
     print_tuple_result<<<1, 1, 1024 * 4, stream>>>(thisPe, symmMem, tupleSize, offsetsResult.thisPartitionSize);
 
-//    // get result from kernel launch
-//    CUDA_CHECK(cudaMemcpy(&shuffleResult, shuffleResultDevicePtr, sizeof(ShuffleWithOffsetsResult), cudaMemcpyDeviceToHost));
-//
-//    // result returned to the user
     ShuffleResult result{};
-//    result.partitionSize = offsetsResult.thisPartitionSize;
-//
-//    // allocate CPU memory for the local partition to be returned to the caller
-//    result.tuples = static_cast<uint8_t *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
-//
-//    // copy local shuffle result into CPU memory to return to user
-//    CUDA_CHECK(cudaMemcpy(result.tuples, shuffleResult.localPartition, offsetsResult.thisPartitionSize * tupleSize,
-//                          cudaMemcpyDeviceToHost));
-
-//    // clean up symmetric memory
-//    nvshmem_free(symmMem);
-//
+    result.partitionSize = offsetsResult.thisPartitionSize;
+    result.tuples = reinterpret_cast<uint8_t *>(malloc(offsetsResult.thisPartitionSize * tupleSize));
+    CUDA_CHECK(cudaMemcpy(result.tuples, symmMem, offsetsResult.thisPartitionSize * tupleSize, cudaMemcpyDeviceToHost));
+    nvshmem_free(symmMem);
     return result;
 }

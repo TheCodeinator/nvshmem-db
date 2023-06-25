@@ -233,10 +233,10 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
 
     // as a first stupid implementation, we let one thread do everything
     if (threadIdx.x == 0) {
-        printf("PE: %d shuffle_with_offset tupleSize: %d, tupleCount: %lu, offsets: %d %d\n", thisPe, tupleSize,
+        printf("PE %d: shuffle_with_offset tupleSize: %d, tupleCount: %lu, offsets: %d %d\n", thisPe, tupleSize,
                tupleCount, offsets[0], offsets[1]);
         // number of tuples per send buffer
-        const int bufferMaxTuples = 8;
+        const int bufferMaxTuples = 64;
         // allocation for the send buffers: Two sendBuffer to overlap computatimon with transmission
         auto *sendBuffer = new uint8_t[bufferMaxTuples * tupleSize * nPes]; // 64 * 64 * 2 = 8kB
         // current positions in send sendBuffer
@@ -350,7 +350,7 @@ __host__ ShuffleResult shuffle(
     int thisPe = nvshmem_team_my_pe(team);
     size_t globalHistogramsSize = nPes * nPes * sizeof(uint32_t);
 
-    printf("PE: %d shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,
+    printf("PE %d: shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,
            keyOffset);
 
     // allocate symm. memory for the globalHistograms of all PEs
@@ -386,7 +386,7 @@ __host__ ShuffleResult shuffle(
     nvshmem_free(localHistogram);
 
     // allocate symmetric memory big enough to fit the largest partition
-    printf("PE: %d Allocating: %u bytes of symmetric memory for tuples after shuffle (%d tuples)\n",
+    printf("PE %d: Allocating: %u bytes of symmetric memory for tuples after shuffle (%d tuples)\n",
            thisPe, offsetsResult.maxPartitionSize * tupleSize, offsetsResult.maxPartitionSize);
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 

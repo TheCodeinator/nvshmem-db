@@ -48,8 +48,8 @@ __global__ void printGPUTuples(shuffle_tuple *tuples, uint64_t numTuples, int th
 // PE 1: 5 6 7 8 9 10 11 12
 
 // after shuffle:
-// PE 0: 0 2 4 6 8 10
-// PE 1: 1 3 5 7 9
+// PE 0: 0 2 4 6 8 10 12
+// PE 1: 1 3 5 7 9 11
 void callShuffle(cudaStream_t &stream, uint64_t nPes, uint64_t thisPe) {
 
     size_t numLocalTuples;
@@ -80,7 +80,7 @@ void callShuffle(cudaStream_t &stream, uint64_t nPes, uint64_t thisPe) {
     const ShuffleResult result =
         shuffle(reinterpret_cast<uint8_t *>(localData), sizeof(shuffle_tuple), numLocalTuples, KEY_OFFSET, stream, NVSHMEM_TEAM_WORLD);
 
-    std::cout << "PE " << thisPe << " has a partition of size " << result.partitionSize << " after shuffling." << std::endl;
+//    std::cout << "PE " << thisPe << " has a partition of size " << result.partitionSize << " after shuffling." << std::endl;
 
     // print tuples
 

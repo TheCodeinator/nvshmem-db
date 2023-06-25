@@ -48,26 +48,9 @@ __device__ void histLocalAtomic(const uint8_t *const localData,
         // get destination PE ID of the shuffle_tuple
         const uint32_t dest = distribute(tuplePtr, keyOffset, nPes);
 
-        // increment corresponding index in computeOffsets
+        // increment corresponding index in compute_offsets
         atomicAdd(hist + dest, 1);
     }
-}
-
-/**
- * exchanges all globalHistograms, such that globalHistograms then contains the globalHistograms of all PEs starting from PE 0, ranging to PE n-1
- * @param globalHistograms pointer to symmetric memory where to put all globalHistograms
- * @param myHistogram pointer to symmetric memory where this histogram is located
- *
- * Histogram layout is as follows (example with 3 PEs):
- *  [0->0] [0->1] [0->2] [1->0] [1->1] [1->2] [2->0] [2->1] [2->2]
- * | Histogram of PE0   | Histogram of PE1   | Histogram of PE2   |
- */
-__device__ void exchangeHistograms(const nvshmem_team_t &team,
-                                   uint32_t *globalHistograms,
-                                   uint32_t *const myHistogram,
-                                   const size_t nPes,
-                                   const int thisPe) {
-
 }
 
 /**
@@ -133,9 +116,9 @@ struct ComputeOffsetsResult {
 };
 
 /**
-* Computes a global computeOffsets of the data based on the shuffling destination over all nodes.
-* Puts the computeOffsets into the device memory pointer hist.
-* Returns the maximum number of tuples per node, i.e. the maximum value in the computeOffsets to the host code via
+* Computes a global compute_offsets of the data based on the shuffling destination over all nodes.
+* Puts the compute_offsets into the device memory pointer hist.
+* Returns the maximum number of tuples per node, i.e. the maximum value in the compute_offsets to the host code via
 * the device variable intResult.
  * @param localData device memory pointer to data local to this node
  * @param tupleSize size of one shuffle_tuple
@@ -143,9 +126,9 @@ struct ComputeOffsetsResult {
  * @param keyOffset position where to find the 4-byte integer key
  * @param team team used for nvshmem communication
  * @param nPes number of members in the team
- * @param hist device memory pointer to an int array of size nPes to store the computeOffsets
+ * @param hist device memory pointer to an int array of size nPes to store the compute_offsets
  */
-__global__ void computeOffsets(
+__global__ void compute_offsets(
         const uint8_t *const localData,
         const uint16_t tupleSize,
         const uint64_t tupleCount,
@@ -191,31 +174,6 @@ __global__ void computeOffsets(
     printf("PE %d: maxPartitionSize = %d, thisPartitionSize = %d\n", thisPe, offsetsResult->maxPartitionSize,
            offsetsResult->thisPartitionSize);
 }
-
-__device__ void
-asyncSendData(const uint16_t tupleSize, const uint32_t nPes, const uint32_t *offsets, uint8_t *symmMem,
-              uint8_t *buffersComp,
-              uint8_t *buffersBackup, uint32_t *const positionsLocal, uint32_t *const positionsRemote) {
-    // swap buffer pointers, backup buffer is free and becomes the new compute buffer
-    devSwap(buffersComp, buffersBackup);
-    // send data out
-    for (uint32_t pe{0}; pe < nPes; ++pe) {
-        // send data to remote PE
-        nvshmem_uint8_put_nbi(&symmMem[offsets[pe] + positionsRemote[pe]],
-                              &buffersBackup[pe],
-                              positionsLocal[pe] * tupleSize,
-                              pe);
-        // advance the position pointer for remote writing for this PE
-        positionsRemote[pe] += positionsLocal[pe];
-    }
-
-    // reset all local position pointers, since we now start with empty buffers again
-    memset(positionsLocal, 0, nPes * sizeof(int));
-}
-
-struct ShuffleWithOffsetsResult {
-    uint8_t *localPartition; // pointer to symmetric memory where the local partition after shuffling resides
-};
 
 __global__ void shuffle_with_offset(const uint8_t *const localData,
                                     const uint16_t tupleSize,
@@ -297,18 +255,13 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
 
         nvshmem_quiet();
 
+        // TODO: PE 0 doesnt' seem to receive the tuples from PE 1 at this point, but later they are there
         for (uint32_t i{0}; i < 7; ++i) { // 7 = maxPartitionSize
             printf("PE %d: symmMem[%d].id = %lu\n",
                    thisPe, i,
                     // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
                    reinterpret_cast<const uint64_t *>(symmMem)[8 * i]);
         }
-
-//        asyncSendData(tupleSize, nPes, offsets, symmMem, sendBuffer, buffersBackup, bytesBuffered,
-//                      positionsRemote);
-
-        // wait for completion of previous send
-        nvshmem_quiet();
     }
 }
 
@@ -354,7 +307,7 @@ __host__ ShuffleResult shuffle(
            keyOffset);
 
     // allocate symm. memory for the globalHistograms of all PEs
-    // Each histogram contains nPes int elements. There is one computeOffsets for each of the nPes PEs
+    // Each histogram contains nPes int elements. There is one compute_offsets for each of the nPes PEs
     auto *globalHistograms = static_cast<uint32_t *>(nvshmem_malloc(globalHistogramsSize));
 
     // allocate private device memory for storing the write offsets
@@ -366,16 +319,16 @@ __host__ ShuffleResult shuffle(
     uint32_t *offsets;
     CUDA_CHECK(cudaMalloc(&offsets, nPes * sizeof(uint32_t)));
 
-    // allocate private device memory for the result of the computeOffsets function
+    // allocate private device memory for the result of the compute_offsets function
     ComputeOffsetsResult offsetsResult{};
     ComputeOffsetsResult *offsetsResultDevice;
     CUDA_CHECK(cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult)));
 
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the globalHistograms and compute the offsets for remote writing
-    computeOffsets<<<1, 1, 1024 * 4, stream>>>(localData, tupleSize, tupleCount,
-                                               keyOffset, team, nPes, thisPe, localHistogram,
-                                               globalHistograms, offsets, offsetsResultDevice);
+    compute_offsets<<<1, 1, 1024 * 4, stream>>>(localData, tupleSize, tupleCount,
+                                                keyOffset, team, nPes, thisPe, localHistogram,
+                                                globalHistograms, offsets, offsetsResultDevice);
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
     // get result from kernel launch

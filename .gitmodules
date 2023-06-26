@@ -1,0 +1,3 @@
+[submodule "librdmapp"]
+	path = librdmapp
+	url = https://github.com/TheCodeinator/librdmapp

@@ -326,10 +326,13 @@ __host__ ShuffleResult shuffle(
 
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the globalHistograms and compute the offsets for remote writing
-    compute_offsets<<<1, 1, 1024 * 4, stream>>>(localData, tupleSize, tupleCount,
-                                                keyOffset, team, nPes, thisPe, localHistogram,
-                                                globalHistograms, offsets, offsetsResultDevice);
-    CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
+    void *comp_offset_args[] = {const_cast<uint8_t **>(&localData), &tupleSize, &tupleCount,
+                           &keyOffset, &team, &nPes, &thisPe, &localHistogram,
+                           &globalHistograms, &offsets, &offsetsResultDevice};
+    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) compute_offsets, 1, 1, comp_offset_args, 1024 * 4, stream));
+
+    // wait for kernel to finish and deliver result
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     // get result from kernel launch
     CUDA_CHECK(cudaMemcpy(&offsetsResult, offsetsResultDevice, sizeof(ComputeOffsetsResult), cudaMemcpyDeviceToHost));

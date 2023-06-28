@@ -2,17 +2,6 @@
 #include <unistd.h>
 
 /**
- * Variable for returning integers from cuda kernels to host code
- */
-__device__ int intResult;
-
-__host__ int getIntResult() {
-    int ret{};
-    cudaMemcpyFromSymbol(&ret, "intResult", sizeof(ret), 0, cudaMemcpyDeviceToHost);
-    return ret;
-}
-
-/**
  * simple swap function callable from device
  */
 template<typename T>
@@ -275,10 +264,7 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
         // wait for last send operation
         nvshmem_quiet();
 
-//         return to caller a pointer to the local partition in symmetric device memory
-//        shuffleWithOffsetsResult->localPartition = &symmMem[offsets[thisPe]];
     }
-
 }
 
 // TODO: use tree-based sum reduction for computing the histograms and the sums if possible:

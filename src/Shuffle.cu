@@ -175,6 +175,40 @@ __global__ void compute_offsets(
            offsetsResult->thisPartitionSize);
 }
 
+/**
+ * Swaps the buffer pointers and position pointers and clears the main buffers
+ * Then asynchronously sends results out based on the backup buffers
+ * When this function returns, the main buffer and position can be reused (since they have been swapped)
+ * This function completes immediately but the networking has to be awaited with nvshmem_quiet before the next call
+ * to this function
+ */
+__device__ void
+async_send_data(const uint16_t tupleSize, const uint32_t nPes, const uint32_t *offsets, uint8_t *symmMem,
+                uint8_t *&buffersComp,
+                uint8_t *&buffersBackup, uint32_t *&positionsLocal, uint32_t *&positionsLocalBackup,
+                uint32_t *const positionsRemote, const uint32_t bufferSize) {
+    // swap buffer pointers, backup buffer is free and becomes the new compute buffer
+    devSwap(buffersComp, buffersBackup);
+    // positions local pointer must be saved in backup for asynchronous transmission; main main positions array
+    // can be reset for next distribution iteration while backup positions are used to send out
+    devSwap(positionsLocal, positionsLocalBackup);
+    // reset all local position pointers, since we now start with empty buffers again when computing
+    memset(positionsLocal, 0, sizeof(uint32_t) * nPes);
+
+    // send data out
+    for (int dest{0}; dest < nPes; ++dest) {
+        // send data to remote PE
+        nvshmem_uint8_put_nbi(symmMem + (offsets[dest] * tupleSize +
+                                         positionsRemote[dest] * tupleSize), // position to write in shared mem
+                              buffersBackup + (dest * bufferSize), // start position of one destination send buffer
+                              positionsLocalBackup[dest] * tupleSize, // number of bytes to send
+                              dest); // destination pe
+        // advance the position pointer for remote writing for this PE
+        positionsRemote[dest] += positionsLocalBackup[dest];
+    }
+
+}
+
 __global__ void shuffle_with_offset(const uint8_t *const localData,
                                     const uint16_t tupleSize,
                                     const uint64_t tupleCount,
@@ -186,83 +220,143 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
                                     uint8_t *const symmMem) {
 
 
+//
+//    // TODO: parallelize scan using GPU threads
+//
+//    // as a first stupid implementation, we let one thread do everything
+//    if (threadIdx.x == 0) {
+//        printf("PE %d: shuffle_with_offset tupleSize: %d, tupleCount: %lu, offsets: %d %d\n", thisPe, tupleSize,
+//               tupleCount, offsets[0], offsets[1]);
+//        // number of tuples per send buffer
+//        const int bufferMaxTuples = 64;
+//        // allocation for the send buffers: Two sendBuffer to overlap computatimon with transmission
+//        auto *sendBuffer = new uint8_t[bufferMaxTuples * tupleSize * nPes]; // 64 * 64 * 2 = 8kB
+//        // current positions in send sendBuffer
+//        auto *const bytesBuffered = new uint32_t[nPes];
+//        // current position writing to the remote locations
+////        auto *const positionsRemote = new uint32_t[nPes];
+//
+//        printf("PE %d: bufferMaxTuples = %d, tupleCount = %lu, nPes = %d\n", thisPe, bufferMaxTuples, tupleCount, nPes);
+//
+//        // iterate over all local data and compute the destination
+//        for (uint32_t i{0}; i < tupleCount; ++i) {
+//            // pointer to i-th local tuple
+//            const uint8_t *const tuplePtr = localData + (i * tupleSize);
+//            // get destination of tuple
+//            const uint32_t targetPe = distribute(tuplePtr, keyOffset, nPes);
+//            // copy shuffle_tuple to respective output buffer
+//
+//            printf("PE %d: tuple %d(%lu) goes to PE %d (pos %d)\n",
+//                   thisPe, i, reinterpret_cast<const uint64_t *>(tuplePtr)[0],
+//                   targetPe,
+//                   targetPe * bufferMaxTuples * tupleSize + bytesBuffered[targetPe]);
+//
+//            memcpy(sendBuffer + (targetPe * bufferMaxTuples * tupleSize +
+//                                 bytesBuffered[targetPe]), // to targetPe-th buffer with offset position
+//                   tuplePtr,
+//                   tupleSize);
+//
+//            // increment local buffer position for this PE
+//            bytesBuffered[targetPe] += tupleSize;
+//        }
+//
+//
+//        for (uint32_t pe{0}; pe < nPes; ++pe) {
+//            for (uint32_t i{0}; i < bytesBuffered[pe] / tupleSize; ++i) {
+//                printf("PE %d -> %d, sendBuffer[%d].id = %lu\n",
+//                       thisPe, pe, pe * bufferMaxTuples + i,
+//                        // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
+//                       reinterpret_cast<const uint64_t *>(sendBuffer)[pe * bufferMaxTuples * 8 + 8 * i]);
+//            }
+//        }
+//
+//        nvshmem_quiet();
+//
+//        for (uint32_t pe{0}; pe < nPes; ++pe) {
+//            printf("PE %d: sending %d bytes to PE %d at offset %d to %p\n", thisPe, bytesBuffered[pe], pe,
+//                   offsets[pe], &symmMem[offsets[pe] * tupleSize]);
+//            for (uint32_t i{0}; i < bytesBuffered[pe] / tupleSize; ++i) {
+//                printf("PE %d sending -> %d, sendBuffer[%d].id = %lu\n",
+//                       thisPe, pe, pe * bufferMaxTuples + i,
+//                        // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
+//                       reinterpret_cast<const uint64_t *>(sendBuffer)[pe * bufferMaxTuples * 8 + 8 * i]);
+//            }
+//            nvshmem_uint8_put_nbi(&symmMem[offsets[pe] * tupleSize],
+//                                  &sendBuffer[pe * bufferMaxTuples * tupleSize],
+//                                  bytesBuffered[pe],
+//                                  pe);
+//        }
+//
+//        nvshmem_quiet();
+//
+//        // TODO: PE 0 doesnt' seem to receive the tuples from PE 1 at this point, but later they are there
+//        for (uint32_t i{0}; i < 7; ++i) { // 7 = maxPartitionSize
+//            printf("PE %d: symmMem[%d].id = %lu\n",
+//                   thisPe, i,
+//                    // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
+//                   reinterpret_cast<const uint64_t *>(symmMem)[8 * i]);
+//        }
+//    }
 
-    // TODO: parallelize scan using GPU threads
 
     // as a first stupid implementation, we let one thread do everything
     if (threadIdx.x == 0) {
-        printf("PE %d: shuffle_with_offset tupleSize: %d, tupleCount: %lu, offsets: %d %d\n", thisPe, tupleSize,
-               tupleCount, offsets[0], offsets[1]);
         // number of tuples per send buffer
-        const int bufferMaxTuples = 64;
-        // allocation for the send buffers: Two sendBuffer to overlap computatimon with transmission
-        auto *sendBuffer = new uint8_t[bufferMaxTuples * tupleSize * nPes]; // 64 * 64 * 2 = 8kB
-        // current positions in send sendBuffer
-        auto *const bytesBuffered = new uint32_t[nPes];
+        const int bufferSize = 2 * tupleSize;
+        // allocation for the send buffersComp; To buffersComp to overlap computation with transmission
+        uint8_t *buffersComp = new uint8_t[bufferSize * nPes];
+        uint8_t *buffersBackup = new uint8_t[bufferSize * nPes];
+        // current positions in send buffersComp
+        uint32_t *positionsLocal = new uint32_t[nPes];
+        uint32_t *positionsLocalBackup = new uint32_t[nPes];
         // current position writing to the remote locations
-//        auto *const positionsRemote = new uint32_t[nPes];
-
-        printf("PE %d: bufferMaxTuples = %d, tupleCount = %lu, nPes = %d\n", thisPe, bufferMaxTuples, tupleCount, nPes);
+        uint32_t *positionsRemote = new uint32_t[nPes];
 
         // iterate over all local data and compute the destination
-        for (uint32_t i{0}; i < tupleCount; ++i) {
+        for (int i{0}; i < tupleCount; ++i) {
             // pointer to i-th local tuple
             const uint8_t *const tuplePtr = localData + (i * tupleSize);
             // get destination of tuple
-            const uint32_t targetPe = distribute(tuplePtr, keyOffset, nPes);
-            // copy shuffle_tuple to respective output buffer
-
-            printf("PE %d: tuple %d(%lu) goes to PE %d (pos %d)\n",
-                   thisPe, i, reinterpret_cast<const uint64_t *>(tuplePtr)[0],
-                   targetPe,
-                   targetPe * bufferMaxTuples * tupleSize + bytesBuffered[targetPe]);
-
-            memcpy(sendBuffer + (targetPe * bufferMaxTuples * tupleSize +
-                                 bytesBuffered[targetPe]), // to targetPe-th buffer with offset position
+            const int dest = distribute(tuplePtr, keyOffset, nPes);
+            printf("PE %d maps tuple id %d -> %d\n",
+                   thisPe,
+                   reinterpret_cast<uint32_t const *>(tuplePtr)[keyOffset],
+                   dest);
+            // copy tuple to respective output buffer
+            memcpy(buffersComp +
+                   (dest * bufferSize + positionsLocal[dest] * tupleSize), // to dest-th buffer with offset position
                    tuplePtr,
                    tupleSize);
-
             // increment local buffer position for this PE
-            bytesBuffered[targetPe] += tupleSize;
-        }
+            ++positionsLocal[dest];
 
+            // if there might be a full buffer, send data out
+            // We do not track all buffersComp individually, because we can only await all async operations at once anyways
+            if (i * tupleSize % bufferSize == 0 && i > 0) {
+                // wait for previous send to be completed => buffersBackup reusable after quiet finishes
+                nvshmem_quiet();
+                // asynchronously send the data to the destinations
+                async_send_data(tupleSize, nPes, offsets, symmMem, buffersComp, buffersBackup, positionsLocal,
+                                positionsLocalBackup,
+                                positionsRemote, bufferSize);
 
-        for (uint32_t pe{0}; pe < nPes; ++pe) {
-            for (uint32_t i{0}; i < bytesBuffered[pe] / tupleSize; ++i) {
-                printf("PE %d -> %d, sendBuffer[%d].id = %lu\n",
-                       thisPe, pe, pe * bufferMaxTuples + i,
-                        // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
-                       reinterpret_cast<const uint64_t *>(sendBuffer)[pe * bufferMaxTuples * 8 + 8 * i]);
             }
+
         }
 
+        // wait for completion of previous send
+        nvshmem_quiet();
+        // send remaining data in buffers
+        async_send_data(tupleSize, nPes, offsets, symmMem, buffersComp, buffersBackup, positionsLocal,
+                        positionsLocalBackup,
+                        positionsRemote, bufferSize);
+        // wait for last send operation
         nvshmem_quiet();
 
-        for (uint32_t pe{0}; pe < nPes; ++pe) {
-            printf("PE %d: sending %d bytes to PE %d at offset %d to %p\n", thisPe, bytesBuffered[pe], pe,
-                   offsets[pe], &symmMem[offsets[pe] * tupleSize]);
-            for (uint32_t i{0}; i < bytesBuffered[pe] / tupleSize; ++i) {
-                printf("PE %d sending -> %d, sendBuffer[%d].id = %lu\n",
-                       thisPe, pe, pe * bufferMaxTuples + i,
-                        // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
-                       reinterpret_cast<const uint64_t *>(sendBuffer)[pe * bufferMaxTuples * 8 + 8 * i]);
-            }
-            nvshmem_uint8_put_nbi(&symmMem[offsets[pe] * tupleSize],
-                                  &sendBuffer[pe * bufferMaxTuples * tupleSize],
-                                  bytesBuffered[pe],
-                                  pe);
-        }
-
-        nvshmem_quiet();
-
-        // TODO: PE 0 doesnt' seem to receive the tuples from PE 1 at this point, but later they are there
-        for (uint32_t i{0}; i < 7; ++i) { // 7 = maxPartitionSize
-            printf("PE %d: symmMem[%d].id = %lu\n",
-                   thisPe, i,
-                    // pe * bufferMaxTuples * 64bit elements in tuple + 8 bytes per element * i-th element
-                   reinterpret_cast<const uint64_t *>(symmMem)[8 * i]);
-        }
+//         return to caller a pointer to the local partition in symmetric device memory
+//        shuffleWithOffsetsResult->localPartition = &symmMem[offsets[thisPe]];
     }
+
 }
 
 // TODO: use tree-based sum reduction for computing the histograms and the sums if possible:
@@ -327,8 +421,8 @@ __host__ ShuffleResult shuffle(
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the globalHistograms and compute the offsets for remote writing
     void *comp_offset_args[] = {const_cast<uint8_t **>(&localData), &tupleSize, &tupleCount,
-                           &keyOffset, &team, &nPes, &thisPe, &localHistogram,
-                           &globalHistograms, &offsets, &offsetsResultDevice};
+                                &keyOffset, &team, &nPes, &thisPe, &localHistogram,
+                                &globalHistograms, &offsets, &offsetsResultDevice};
     NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) compute_offsets, 1, 1, comp_offset_args, 1024 * 4, stream));
 
     // wait for kernel to finish and deliver result

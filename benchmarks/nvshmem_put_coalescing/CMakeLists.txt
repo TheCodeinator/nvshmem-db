@@ -1,0 +1,1 @@
+add_executable(nvshmem_put_coalescing nvshmem_put_coalescing.cpp)

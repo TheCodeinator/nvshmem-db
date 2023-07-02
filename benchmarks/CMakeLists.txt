@@ -1,1 +1,2 @@
 add_subdirectory(nvshmem_shuffle)
+add_subdirectory(nvshmem_put_coalescing)

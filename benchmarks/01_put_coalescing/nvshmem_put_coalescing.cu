@@ -111,13 +111,11 @@ __global__ void exchange_data(int this_pe,
         long long start_time = clock64();
 
         // wait until flag has been delivered, this then indicates all previous data has been delivered
-        // TODO: check if this call is correct (might use nvshmem_int_wait)
         nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_1_SEND_DONE);
 
         long long stop_time = clock64();
         auto elapsed_time = stop_time - start_time;
 
-        // TODO: fix format specifier for time (probably must be casted to int?)
         printf("Receiver: time until all %zu elems have been received separately: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // verify correctness

@@ -32,6 +32,10 @@ struct ShuffleResult {
     uint64_t partitionSize;
 };
 
+/*
+TODO: This as well as the declaration of the error handlers is problematic because it forces users of the public API to preprocess all files this is included by nvcc
+(fix -> do not expose CUDA Language extensions here or split header)
+*/
 __host__ ShuffleResult shuffle(
     const uint8_t *localData,// ptr to device data
     uint16_t tupleSize,

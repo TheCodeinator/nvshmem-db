@@ -3,7 +3,7 @@
 // TODO: use testing framework such as Boost test, google test or catch2
 
 template<bool isCorrect>
-consteval int returnsFour() {
+constexpr int returnsFour() {
     if constexpr (isCorrect) {
         return 4;
     } else {

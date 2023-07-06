@@ -167,9 +167,6 @@ __global__ void compute_offsets(
 
 
 class ShuffleBuffers {
-private:
-    uint8_t *buffers;
-    uint32_t *offsets;
 
 public:
     const uint bufferCount = 2;
@@ -181,13 +178,22 @@ public:
     uint32_t tupleSize;
     uint32_t bufferSize;
 
+private:
+    uint8_t *buffers;
+    uint32_t *offsets;
+
+    uint maxBufferIndex = bufferCount - 1;
+
 public:
     __host__ ShuffleBuffers(uint32_t bufferTupleSize, uint32_t tupleSize, uint32_t nPes)
             : bufferInUse(0), bufferTupleSize(bufferTupleSize), tupleSize(tupleSize),
             bufferSize(bufferTupleSize * tupleSize), nPes(nPes)
     {
         buffers = static_cast<uint8_t*>(nvshmem_malloc(bufferCount * bufferSize * nPes * sizeof(uint8_t)));
-        CUDA_CHECK(cudaMalloc(&offsets, bufferCount * nPes * sizeof(uint32_t)));
+
+        uint offset_buffer_size = bufferCount * nPes * sizeof(uint32_t);
+        CUDA_CHECK(cudaMalloc(&offsets, offset_buffer_size));
+        cudaMemset(offsets, 0, offset_buffer_size);
     }
     __host__ __device__ ShuffleBuffers(const ShuffleBuffers &other) = delete;
     __host__ __device__ ShuffleBuffers(ShuffleBuffers &&other) = delete;
@@ -196,28 +202,28 @@ public:
         CUDA_CHECK(cudaFree(offsets));
     }
 
-    __device__ ShuffleBuffers &operator=(const ShuffleBuffers &other) = delete;
-    __device__ ShuffleBuffers &operator=(ShuffleBuffers &&other) = delete;
+    __host__ __device__ ShuffleBuffers &operator=(const ShuffleBuffers &other) = delete;
+    __host__ __device__ ShuffleBuffers &operator=(ShuffleBuffers &&other) = delete;
 
-    __device__ inline uint8_t *getBuffer(uint bufferNumber) {
-        return buffers + bufferNumber * bufferSize * nPes;
+    __host__ __device__ inline uint8_t *getBuffer(uint bufferIndex) {
+        return buffers + bufferIndex * bufferSize * nPes;
     }
-    __device__ inline uint8_t *currentBuffers() {
+    __host__ __device__ inline uint8_t *currentBuffers() {
         return getBuffer(bufferInUse);
     }
 
-    __device__ inline uint32_t *getOffsets(uint bufferNumber) {
-        return offsets + bufferNumber * nPes;
+    __host__ __device__ inline uint32_t *getOffsets(uint bufferIndex) {
+        return offsets + bufferIndex * nPes;
     }
-    __device__ inline uint32_t *currentOffsets() {
+    __host__ __device__ inline uint32_t *currentOffsets() {
         return getOffsets(bufferInUse);
     }
 
-    __device__ inline uint useNextBuffer() {
-        return atomicInc(&bufferInUse, bufferCount);
+    __device__ uint useNextBuffer() {
+        return atomicInc(&bufferInUse, maxBufferIndex);
     }
-    __device__ inline void resetBuffer(uint bufferNumber) {
-        memset(getOffsets(bufferNumber), 0, nPes * sizeof(uint32_t));
+    __device__ void resetBuffer(uint bufferIndex) {
+        memset(getOffsets(bufferIndex), 0, nPes * sizeof(uint32_t));
     }
 };
 
@@ -229,21 +235,18 @@ public:
  * to this function
  */
 __device__ void
-async_send_data(const uint16_t tupleSize, const uint32_t nPes, const uint32_t *offsets, uint8_t *symmMem,
-                ShuffleBuffers *buffers, uint32_t *const positionsRemote) {
-    auto oldBuffer = buffers->useNextBuffer();
+async_send_data(const uint32_t *offsets, uint8_t *symmMem, ShuffleBuffers *buffers, uint bufferId, uint32_t *const positionsRemote) {
     // send data out
-    for (int dest{0}; dest < nPes; ++dest) {
+    for (int dest{0}; dest < buffers->nPes; ++dest) {
         // send data to remote PE
-        nvshmem_uint8_put_nbi(symmMem + (offsets[dest] * tupleSize +
-                                         positionsRemote[dest] * tupleSize), // position to write in shared mem
-                              buffers->getBuffer(oldBuffer) + (dest * buffers->bufferSize), // start position of one destination send buffer
-                              buffers->getOffsets(oldBuffer)[dest] * tupleSize, // number of bytes to send
+        nvshmem_uint8_put_nbi(symmMem + (offsets[dest] * buffers->tupleSize +
+                                         positionsRemote[dest] * buffers->tupleSize), // position to write in shared mem
+                              buffers->getBuffer(bufferId) + (dest * buffers->bufferSize), // start position of one destination send buffer
+                              buffers->getOffsets(bufferId)[dest] * buffers->tupleSize, // number of bytes to send
                               dest); // destination pe
         // advance the position pointer for remote writing for this PE
-        positionsRemote[dest] += buffers->getOffsets(oldBuffer)[dest];
+        positionsRemote[dest] += buffers->getOffsets(bufferId)[dest];
     }
-    buffers->resetBuffer(oldBuffer);
 }
 
 __global__ void shuffle_with_offset(const uint8_t *const localData,
@@ -259,7 +262,7 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
     uint threadCount = blockDim.x * gridDim.x;
 
     // TODO: parallelize scan using GPU threads
-    printf("PE %d: %d threads\n", thisPe, blockDim.x * gridDim.x);
+    printf("PE %d: %d threads\n", thisPe, threadCount);
     assert(threadCount <= buffers->bufferTupleSize && buffers->bufferTupleSize % threadCount == 0); // buffer size must be a multiple of thread count for buffer maybe full asumption to send out data
 
     // current position writing to the remote locations
@@ -268,19 +271,19 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
     // iterate over all local data and compute the destination
     const auto tid = blockIdx.x * blockDim.x + threadIdx.x;
 
+    const uint iterationToSend = buffers->bufferTupleSize / threadCount;
+    uint iteration = 0;
+
     for (uint i = tid; i < tupleCount; i += blockDim.x * gridDim.x) {
         // pointer to i-th local tuple
         const uint8_t *const tuplePtr = localData + (i * tupleSize);
         // get destination of tuple
         const uint dest = distribute(tuplePtr, keyOffset, nPes);
         // copy tuple to respective output buffer
-        uint32_t offset = atomicInc(&(buffers->currentOffsets()[dest]), buffers->bufferTupleSize);
-        printf("PE %d, Thread %d: writes tuple id %d -> %d at offset %d\n",
-               thisPe,
-               tid,
-               reinterpret_cast<uint32_t const *>(tuplePtr)[keyOffset],
-               dest,
-               offset);
+        uint32_t offset = atomicAdd(buffers->currentOffsets() + dest, 1);
+        assert(offset < buffers->bufferTupleSize);
+        printf("PE %d, Thread %d: writes tuple id %d -> %d at offset %d to buffer %d\n", thisPe, tid,
+               reinterpret_cast<uint32_t const *>(tuplePtr)[keyOffset], dest, offset, buffers->bufferInUse);
 
         memcpy(buffers->currentBuffers() + (dest * buffers->bufferSize + offset * tupleSize), // to dest-th buffer with offset position
                tuplePtr,
@@ -291,22 +294,36 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
         // if there might be a full buffer, send data out
         // We do not track all buffersComp individually, because we can only await all async operations at once anyways
         //printf("PE: %d, offset: %d\n", thisPe, offset);
-        if (i == buffers->bufferTupleSize && tid == 0) {
-            // TODO: check if buffer is really full and introduce counter for iteration count left
-            printf("PE %d: sending buffer\n", thisPe);
-            // wait for previous send to be completed => buffersBackup reusable after quiet finishes
-            nvshmem_quiet();
-            // asynchronously send the data to the destinations
-            async_send_data(tupleSize, nPes, offsets, symmMem, buffers, positionsRemote);
-        }
+        if (++iteration % iterationToSend == 0) {
+            uint oldBuffer;
+            if (tid == 0) {
+                oldBuffer = buffers->useNextBuffer();
+                printf("PE %d: switched from buffer %d to buffer %d\n", thisPe, oldBuffer, buffers->bufferInUse);
+            }
+            __syncthreads(); // sync threads for buffer switch
 
+            if (tid == 0) {
+                // wait for completion of previous send, because thread 0 waits, the next buffer switch waits for thread 0 to finish sending
+                nvshmem_quiet();
+                // TODO: check if buffer is really full and introduce counter for iteration count left
+                // wait for previous send to be completed => buffersBackup reusable after quiet finishes
+                printf("PE %d, Thread %d: sending buffer %d\n", thisPe, tid, oldBuffer);
+                async_send_data(offsets, symmMem, buffers, oldBuffer, positionsRemote);
+
+                __nanosleep(100000000); // wait for send to finish (TODO: remove this)
+                // reset buffer (set offsets to 0)
+                printf("PE %d, Thread %d: resetting buffer %d\n", thisPe, tid, oldBuffer);
+                buffers->resetBuffer(oldBuffer);
+            }
+        }
     }
 
     if(tid == 0) {
         // wait for completion of previous send
         nvshmem_quiet();
         // send remaining data in buffers
-        async_send_data(tupleSize, nPes, offsets, symmMem, buffers, positionsRemote);
+        printf("PE %d: send remaining buffer\n", thisPe);
+        async_send_data(offsets, symmMem, buffers, buffers->bufferInUse, positionsRemote);
         // wait for last send operation
         nvshmem_quiet();
     }
@@ -393,7 +410,7 @@ __host__ ShuffleResult shuffle(
            thisPe, offsetsResult.maxPartitionSize * tupleSize, offsetsResult.maxPartitionSize);
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
-    uint threadCount = 10;
+    uint threadCount = 2;
     // multiple buffers for asynchronous send operations
     auto buffers = ShuffleBuffers(2*threadCount, tupleSize, nPes);
     ShuffleBuffers *deviceBuffers = nullptr;

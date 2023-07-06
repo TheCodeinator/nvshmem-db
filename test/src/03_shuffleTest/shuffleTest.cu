@@ -107,13 +107,13 @@ int main() {
     cudaStream_t stream;
 
     nvshmem_init();
-    thisPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
-    nPes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
+    thisPe = nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE);
     cudaSetDevice(thisPe);
     cudaStreamCreate(&stream);
 
     const create_tuple_result tuple_result = create_all_local_tuples();
     call_shuffle(stream, tuple_result.tuples, tuple_result.num_tuples);
+
     nvshmem_finalize();
     return 0;
 }

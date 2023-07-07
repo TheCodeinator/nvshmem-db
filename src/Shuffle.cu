@@ -220,7 +220,9 @@ public:
     }
 
     __device__ uint useNextBuffer() {
-        return atomicInc(&bufferInUse, maxBufferIndex);
+        uint oldBufferInUse = bufferInUse;
+        bufferInUse = (bufferInUse + 1) % bufferCount;
+        return oldBufferInUse;
     }
     __device__ void resetBuffer(uint bufferIndex) {
         memset(getOffsets(bufferIndex), 0, nPes * sizeof(uint32_t));
@@ -299,23 +301,22 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
             if (tid == 0) {
                 oldBuffer = buffers->useNextBuffer();
                 printf("PE %d: switched from buffer %d to buffer %d\n", thisPe, oldBuffer, buffers->bufferInUse);
-            }
-            __syncthreads(); // sync threads for buffer switch
 
-            if (tid == 0) {
-                // wait for completion of previous send, because thread 0 waits, the next buffer switch waits for thread 0 to finish sending
+                // wait for completion of previous send
                 nvshmem_quiet();
+
                 // TODO: check if buffer is really full and introduce counter for iteration count left
                 // wait for previous send to be completed => buffersBackup reusable after quiet finishes
                 printf("PE %d, Thread %d: sending buffer %d\n", thisPe, tid, oldBuffer);
                 async_send_data(offsets, symmMem, buffers, oldBuffer, positionsRemote);
 
-                __nanosleep(100000000); // wait for send to finish (TODO: remove this)
                 // reset buffer (set offsets to 0)
                 printf("PE %d, Thread %d: resetting buffer %d\n", thisPe, tid, oldBuffer);
                 buffers->resetBuffer(oldBuffer);
             }
+            __syncthreads(); // sync threads for buffer switch
         }
+
     }
 
     if(tid == 0) {
@@ -410,7 +411,7 @@ __host__ ShuffleResult shuffle(
            thisPe, offsetsResult.maxPartitionSize * tupleSize, offsetsResult.maxPartitionSize);
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
-    uint threadCount = 2;
+    uint threadCount = 3;
     // multiple buffers for asynchronous send operations
     auto buffers = ShuffleBuffers(2*threadCount, tupleSize, nPes);
     ShuffleBuffers *deviceBuffers = nullptr;

@@ -141,7 +141,34 @@ ShuffleResult shuffle(
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,
+        std::string ip,
+        uint16_t port,
+        std::vector<std::tuple<std::string,uint16_t>> peers,
         const cudaStream_t &stream) {
+
+    // nPes is number of processes participating
+    uint32_t n_pes = peers.size();
+    size_t globalHistogramsSize = n_pes * n_pes * sizeof(uint32_t);
+
+
+    printf("PE %d: shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,
+           keyOffset);
+
+    uint32_t * d_global_histograms;
+    CUDA_CHECK(cudaMalloc(&d_global_histograms, globalHistogramsSize));
+
+    uint32_t * d_local_histogram;
+    CUDA_CHECK(cudaMalloc(&d_local_histogram, n_pes*sizeof(uint32_t)));
+
+    // init rdma
+
+    // call kernels
+
+    // rdma exchange
+
+    // repeat
+
+    // finalize rdma
 
     ShuffleResult result;
 

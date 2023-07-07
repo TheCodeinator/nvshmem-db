@@ -3,8 +3,9 @@
 
 
 #include <cuda_runtime.h>
+#include <string>
+#include <vector>
 #include "rdma.hpp"
-#include "connection.hpp"
 
 struct ShuffleResult {
     uint8_t *tuples;
@@ -17,6 +18,9 @@ ShuffleResult shuffle(
         uint16_t tupleSize,
         uint64_t tupleCount,
         uint8_t keyOffset,
+        std::string ip,
+        uint16_t port,
+        std::vector<std::tuple<std::string,uint16_t>> peers,
         const cudaStream_t &stream);
 
 #endif

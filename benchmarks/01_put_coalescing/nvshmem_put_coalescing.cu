@@ -100,7 +100,7 @@ __global__ void exchange_data(int this_pe,
         nvshmem_quiet();
 
         stop_time = clock64();
-        elapsed_time = static_cast<int>(stop_time - start_time);
+        elapsed_time = stop_time - start_time;
 
         printf("Sender: time for sending %zu elems at once and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
@@ -138,7 +138,7 @@ __global__ void exchange_data(int this_pe,
         nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_2_SEND_DONE);
 
         stop_time = clock64();
-        elapsed_time = static_cast<int64_t>(stop_time - start_time);
+        elapsed_time = stop_time - start_time;
 
         printf("Receiver: time until all %zu elems have been received at once: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 

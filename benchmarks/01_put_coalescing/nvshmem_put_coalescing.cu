@@ -75,7 +75,7 @@ __global__ void exchange_data(int this_pe,
         long long stop_time = clock64();
         long long elapsed_time = stop_time - start_time;
 
-        printf("Sender: time for sending %zu elems separately and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
+        printf("Sender: time for sending %lu elems separately and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // TODO: return result in CSV format
 
@@ -102,7 +102,7 @@ __global__ void exchange_data(int this_pe,
         stop_time = clock64();
         elapsed_time = stop_time - start_time;
 
-        printf("Sender: time for sending %zu elems at once and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
+        printf("Sender: time for sending %lu elems at once and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
     } else { // PE 1 is the receiver
         // sync with other PE to make them start simultaneously
@@ -116,7 +116,7 @@ __global__ void exchange_data(int this_pe,
         long long stop_time = clock64();
         auto elapsed_time = stop_time - start_time;
 
-        printf("Receiver: time until all %zu elems have been received separately: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
+        printf("Receiver: time until all %lu elems have been received separately: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // verify correctness
         for (size_t i{0}; i < N_ELEMS; ++i) {
@@ -140,7 +140,7 @@ __global__ void exchange_data(int this_pe,
         stop_time = clock64();
         elapsed_time = stop_time - start_time;
 
-        printf("Receiver: time until all %zu elems have been received at once: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
+        printf("Receiver: time until all %lu elems have been received at once: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // verify correctness
         for (size_t i{0}; i < N_ELEMS; ++i) {

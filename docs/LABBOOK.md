@@ -10,6 +10,10 @@ This is a living document for issues during the course of the project, document 
 
 => Append the contents of the file ROOT/docs/dev_env.sh to your ~/.bashrc file 
 
-### 06.07.2023
-cuda crashes because NVSHMEMX_TEAM_NODE must be used instad of NVSHMEM_TEAM_WORLD
+### 06.07.2023 NVSHMEM crash caused by wrong world Team variable
+=> cuda crashes because NVSHMEMX_TEAM_NODE must be used instad of NVSHMEM_TEAM_WORLD
+
+### 07.07.2023 Our approach does not realistically capture the problem domain and adapting it would induce further complexity
+
+=> Multiple kernel launches and send operations for data exchange with RDMA are only necessary if the data to send does not fit in the send buffer or the remote does not have enough capacity to store received data. This is the motivation for our approach. However, to capture this realistically, we would have to flush the symmetric upon receipt. This would however need further synchronization to indicate the readiness of the remote to receive again. => Discuss this limitation in our evaluation in the report.
 

@@ -1,0 +1,2 @@
+add_subdirectory(01_put_coalescing)
+add_subdirectory(02_shuffle)

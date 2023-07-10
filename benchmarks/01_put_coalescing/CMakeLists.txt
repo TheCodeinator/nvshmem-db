@@ -1,0 +1,8 @@
+add_executable(bench_01_put_coalescing nvshmem_put_coalescing.cu)
+
+target_link_libraries(bench_01_put_coalescing nvshmem)
+
+set_property(TARGET bench_01_put_coalescing PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(bench_01_put_coalescing PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+
+add_test(NAME bench_01_put_coalescing COMMAND bench_01_put_coalescing)

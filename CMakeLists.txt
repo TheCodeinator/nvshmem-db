@@ -40,10 +40,11 @@ include_directories(inc
 add_subdirectory(src)
 add_subdirectory(librdmapp)
 
-# Only build tests if this is the top level cmake file i.e. we build this stand alone without user code
+# Only build tests and benchmarks if this is the top level cmake file i.e. we build this stand alone without user code
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
     enable_testing()
     add_subdirectory(test/src)
+    add_subdirectory(benchmarks)
 endif ()
 
 if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")

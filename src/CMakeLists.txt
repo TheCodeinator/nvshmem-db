@@ -1,7 +1,7 @@
 ############################################################
 # Our library
 ############################################################
-add_library(nvshmem-db Shuffle.cu)
+add_library(nvshmem-db shuffle.cu shuffle_buffers.cu)
 
 target_link_libraries(nvshmem-db PRIVATE nvshmem)
 

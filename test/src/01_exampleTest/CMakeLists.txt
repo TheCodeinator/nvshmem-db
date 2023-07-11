@@ -1,7 +1,7 @@
 # TODO: use unit testing framework such as Boost Test, Google Test or Catch2
 
 # add cpp files to the test cases
-add_executable(01_exampleTest exampleTest.cpp)
+add_executable(01_exampleTest example_test.cpp)
 add_dependencies(01_exampleTest nvshmem-db)
 # link our own library
 target_link_libraries(01_exampleTest nvshmem-db)

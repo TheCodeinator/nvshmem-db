@@ -1,5 +1,5 @@
 #include <iostream>
-#include "Shuffle.h"
+#include "shuffle.h"
 
 struct shuffle_tuple {
     uint64_t id;

@@ -1,4 +1,4 @@
-add_executable(03_shuffleTest shuffleTest.cu)
+add_executable(03_shuffleTest shuffle_test.cu)
 add_dependencies(03_shuffleTest nvshmem-db)
 
 target_link_libraries(03_shuffleTest nvshmem-db)

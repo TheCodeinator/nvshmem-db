@@ -27,6 +27,8 @@
       loop:
         - src: "CMakeLists.txt"
           dest: "~/nvshmem-db/benchmarks/"
+        - src: "hosts.txt"
+          dest: "~/nvshmem-db/benchmarks/"
         - src: "../inc"
           dest: "~/nvshmem-db/"
         - src: "../src"
@@ -37,3 +39,37 @@
           dest: "~/nvshmem-db/"
         - src: "../../CMakeLists.txt"
           dest: "~/nvshmem-db/"
+
+    - name: Generate SSH key on master node
+      command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -q -N ""
+      args:
+        creates: ~/.ssh/id_rsa
+      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+      run_once: true
+
+    - name: Fetch public key from master node
+      fetch:
+        src: ~/.ssh/id_rsa.pub
+        dest: /tmp/id_rsa.pub
+        flat: yes
+      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+      run_once: true
+
+    - name: Add public key to .ssh/authorized_keys on all nodes
+      authorized_key:
+        user: "{{ ansible_user }}"
+        state: present
+        key: "{{ lookup('file', '/tmp/id_rsa.pub') }}"
+
+    - name: Compile nvshmem-db
+      shell: |
+        cd ~/nvshmem-db
+
+        ~/cmake-3.25.3-linux-x86_64/bin/cmake . \
+          -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12/bin/nvcc \
+          -DNVSHMEM_PREFIX=/opt/nvshmem/ \
+          -DMPI_HOME=/usr/hpcx/ompi \
+          -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-11 \
+          -DCMAKE_BUILD_TYPE=Debug
+
+        make

@@ -1,0 +1,13 @@
+- name: Run benchmarks
+  hosts: all
+  vars:
+    benchmarks:
+      - "01_put_coalescing"
+      - "02_shuffle"
+  tasks:
+    - name: Copy benchmark to nodes
+      synchronize:
+        src: "{{ item }}"
+        dest: ~/nvshmem-db/benchmarks/
+        recursive: true
+      loop: "{{ benchmarks }}"

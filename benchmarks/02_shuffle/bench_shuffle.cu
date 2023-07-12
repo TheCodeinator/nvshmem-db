@@ -1,32 +1,27 @@
 #include <iostream>
-#include <fstream>
-#include <unistd.h>
-#include <chrono>
-#include <ctime>
-//#include <Shuffle.h>
+#include <cuda.h>
+#include "nvshmem.h"
 
 int main(int argc, char *argv[]) {
-
-    std::ofstream outfile;
-    outfile.open("bench_shuffle_out.csv");
-    outfile << "type, node_count,in n,out n\n";
-
-    for (int tableSize{1000}; tableSize <= 100000; tableSize *= 2) {
-
-        outfile << "nvshmem_shuffle, 1, " << tableSize << ", ";
-
-        auto start = std::chrono::steady_clock::now();
-        sleep(1e-4 * tableSize);
-        auto end = std::chrono::steady_clock::now();
-
-        auto dur = end - start;
-        auto time_ms = dur.count() * 1e-6;
-
-        outfile << time_ms << "\n";
-
+    // Check if a table size argument is given
+    if (argc < 2) {
+        std::cout << "Usage: " << argv[0] << " <table_size>" << std::endl;
+        return 1;
     }
 
-    outfile.close();
+    // Convert argument to integer
+    int table_size = std::stoi(argv[1]);
 
-    return EXIT_SUCCESS;
+    int nPes, thisPe;
+    cudaStream_t stream;
+
+    nvshmem_init();
+    thisPe = nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE);
+    cudaSetDevice(thisPe);
+    cudaStreamCreate(&stream);
+
+    printf("PE %d: table size %d\n", thisPe, table_size);
+
+    nvshmem_finalize();
+    return 0;
 }

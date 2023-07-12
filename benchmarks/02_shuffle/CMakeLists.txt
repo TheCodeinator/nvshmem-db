@@ -1,1 +1,6 @@
-add_executable(bench_02_shuffle bench_shuffle.cpp)
+project(bench_02_shuffle LANGUAGES CXX CUDA)
+add_executable(bench_02_shuffle bench_shuffle.cu)
+add_dependencies(bench_02_shuffle nvshmem-db)
+target_link_libraries(bench_02_shuffle nvshmem-db)
+set_property(TARGET bench_02_shuffle PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(bench_02_shuffle PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

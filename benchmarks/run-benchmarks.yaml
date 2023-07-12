@@ -5,9 +5,46 @@
       - "01_put_coalescing"
       - "02_shuffle"
   tasks:
-    - name: Copy benchmark to nodes
+    - name: Create project directory
+      file:
+        path: ~/nvshmem-db
+        state: directory
+    - name: Copy benchmarks to nodes
       synchronize:
         src: "{{ item }}"
         dest: ~/nvshmem-db/benchmarks/
         recursive: true
+        delete: true
       loop: "{{ benchmarks }}"
+    - name: Copy benchmark CMakeLists.txt
+      synchronize:
+        src: CMakeLists.txt
+        dest: ~/nvshmem-db/benchmarks/
+    - name: Copy headers to nodes
+      synchronize:
+        src: ../inc
+        dest: ~/nvshmem-db/
+        recursive: true
+        delete: true
+    - name: Copy our library to nodes
+      synchronize:
+        src: ../src
+        dest: ~/nvshmem-db/
+        recursive: true
+        delete: true
+    - name: Copy docs
+      synchronize:
+        src: ../docs
+        dest: ~/nvshmem-db/
+        recursive: true
+        delete: true
+    - name: Copy tests
+      synchronize:
+        src: ../test
+        dest: ~/nvshmem-db/
+        recursive: true
+        delete: true
+    - name: Copy root CMakeLists.txt
+      synchronize:
+        src: ../../CMakeLists.txt
+        dest: ~/nvshmem-db/

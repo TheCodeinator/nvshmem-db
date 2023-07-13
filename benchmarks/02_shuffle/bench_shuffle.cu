@@ -77,11 +77,10 @@ void call_shuffle(cudaStream_t &stream, shuffle_tuple **local_tuples, uint64_t *
         shuffle(reinterpret_cast<const uint8_t *>(local_tuples[thisPe]), sizeof(shuffle_tuple), num_tuples[thisPe],
                 KEY_OFFSET, stream, NVSHMEM_TEAM_WORLD);
 
-//    // check that the local result contains the correct tuples
-//    for (uint64_t i{0}; i < result.partitionSize; ++i) {
-//        // modulo of received tuples should be this PE's ID
-//        assert(reinterpret_cast<uint64_t *>(result.tuples)[i * 8] % nPes == thisPe);
-//    }
+    for (uint64_t i{0}; i < result.partitionSize; ++i) {
+        // modulo of received tuples should be this PE's ID
+        assert(reinterpret_cast<uint64_t *>(result.tuples)[i * 8] % nPes == thisPe);
+    }
 }
 
 int main(int argc, char *argv[]) {

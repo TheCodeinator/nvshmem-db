@@ -131,31 +131,14 @@ __global__ void compute_offsets(
     // TODO: alltoall doesn't work, but fcollect does?
     assert(nvshmem_uint32_fcollect(team, globalHistograms, localHistogram, nPes) == 0);
 
-    if (threadIdx.x == 0) {
-        printf("PE %d globalHistograms AFTER exchange: %d %d %d %d\n", thisPe, globalHistograms[0], globalHistograms[1],
-               globalHistograms[2], globalHistograms[3]);
-    }
-
     // compute offsets based on globalHistograms
     offsetsFromHistograms(nPes, thisPe, globalHistograms, offsets);
-
-    // print offsets
-    if (threadIdx.x == 0) {
-        printf("(Remote) offsets for PE %d: ", thisPe);
-        for (int i{0}; i < nPes; ++i) {
-            printf("%d ", offsets[i]);
-        }
-        printf("\n");
-    }
 
     // compute max output partition size (max value of histogram sums)
     offsetsResult->maxPartitionSize = maxPartitionSize(globalHistograms, nPes);
 
     // compute size of this partition
     offsetsResult->thisPartitionSize = thisPartitionSize(globalHistograms, nPes, thisPe);
-
-    printf("PE %d: maxPartitionSize = %d, thisPartitionSize = %d\n", thisPe, offsetsResult->maxPartitionSize,
-           offsetsResult->thisPartitionSize);
 }
 
 /**
@@ -166,13 +149,15 @@ __global__ void compute_offsets(
  * to this function
  */
 __device__ void
-async_send_data(const uint32_t *offsets, uint8_t *symmMem, ShuffleBuffers *buffers, uint bufferId, uint32_t *const positionsRemote) {
+async_send_data(const uint32_t *offsets, uint8_t *symmMem, ShuffleBuffers *buffers, uint bufferId,
+                uint32_t *const positionsRemote) {
     // send data out
     for (int dest{0}; dest < buffers->nPes; ++dest) {
         // send data to remote PE
         nvshmem_uint8_put_nbi(symmMem + (offsets[dest] * buffers->tupleSize +
                                          positionsRemote[dest] * buffers->tupleSize), // position to write in shared mem
-                              buffers->getBuffer(bufferId) + (dest * buffers->bufferSize), // start position of one destination send buffer
+                              buffers->getBuffer(bufferId) +
+                              (dest * buffers->bufferSize), // start position of one destination send buffer
                               buffers->getOffsets(bufferId)[dest] * buffers->tupleSize, // number of bytes to send
                               dest); // destination pe
         // advance the position pointer for remote writing for this PE
@@ -196,10 +181,8 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
     const uint iterationToSend = buffers->bufferTupleSize / threadCount;
     uint iteration = 0;
 
-    if (tid == 0) {
-        printf("PE %d: %d threads, buffer size in tuple %d\n", thisPe, threadCount, buffers->bufferTupleSize);
-    }
-    assert(threadCount <= buffers->bufferTupleSize && buffers->bufferTupleSize % threadCount == 0); // buffer size must be a multiple of thread count for buffer maybe full asumption to send out data
+    assert(threadCount <= buffers->bufferTupleSize && buffers->bufferTupleSize % threadCount ==
+                                                      0); // buffer size must be a multiple of thread count for buffer maybe full asumption to send out data
 
     // iterate over all local data and compute the destination
     for (uint i = tid; i < tupleCount; i += blockDim.x * gridDim.x) {
@@ -211,34 +194,29 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
         // increment the offset for this destination atomically (atomicAdd returns the value before increment)
         uint32_t offset = atomicAdd(buffers->currentOffsets() + dest, 1);
         assert(offset < buffers->bufferTupleSize); // assert that offset is not out of bounds
-        printf("PE %d, Thread %d: writes tuple id %d -> %d at offset %d to buffer %d\n", thisPe, tid,
-               reinterpret_cast<uint32_t const *>(tuplePtr)[keyOffset], dest, offset, buffers->currentBufferIndex());
         // copy tuple to buffer
-        memcpy(buffers->currentBuffers() + (dest * buffers->bufferSize + offset * buffers->tupleSize), // to dest-th buffer with offset position
+        memcpy(buffers->currentBuffers() +
+               (dest * buffers->bufferSize + offset * buffers->tupleSize), // to dest-th buffer with offset position
                tuplePtr,
                buffers->tupleSize);
 
         // if there might be a full buffer, send data out
         // We do not track all buffersComp individually, because we can only await all async operations at once anyways
-        //printf("PE: %d, offset: %d\n", thisPe, offset);
         if (++iteration % iterationToSend == 0) {
             uint oldBuffer;
             if (tid == 0) {
                 // switch buffer, returns index of old buffer
                 oldBuffer = buffers->useNextBuffer();
-                printf("PE %d: switched from buffer %d to buffer %d\n", thisPe, oldBuffer, buffers->currentBufferIndex());
 
                 // wait for completion of previous send
                 nvshmem_quiet();
 
                 // TODO: check if buffer is really full and introduce counter for iteration count left
                 // wait for previous send to be completed => buffersBackup reusable after quiet finishes
-                printf("PE %d, Thread %d: sending buffer %d\n", thisPe, tid, oldBuffer);
                 // send data out (at old buffer)
                 async_send_data(offsets, symmMem, buffers, oldBuffer, positionsRemote);
 
                 // reset buffer offsets to 0
-                printf("PE %d, Thread %d: resetting buffer %d\n", thisPe, tid, oldBuffer);
                 buffers->resetBuffer(oldBuffer);
             }
             __syncthreads(); // sync threads after send operation
@@ -246,11 +224,10 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
 
     }
 
-    if(tid == 0) {
+    if (tid == 0) {
         // wait for completion of previous send
         nvshmem_quiet();
         // send remaining data in buffers
-        printf("PE %d: send remaining buffer\n", thisPe);
         async_send_data(offsets, symmMem, buffers, buffers->currentBufferIndex(), positionsRemote);
         // wait for last send operation
         nvshmem_quiet();
@@ -302,9 +279,15 @@ __host__ ShuffleResult shuffle(
     // Each histogram contains nPes int elements. There is one compute_offsets for each of the nPes PEs
     auto *globalHistograms = static_cast<uint32_t *>(nvshmem_malloc(globalHistogramsSize));
 
+    // globalHistogram will be overwritten later, so it doesn't have to be initialized
+
     // allocate private device memory for storing the write offsets
     // this is sent to all other PEs
     auto *localHistogram = static_cast<uint32_t *>(nvshmem_malloc(nPes * sizeof(uint32_t)));
+
+    // clear localHistogram
+
+    cudaMemset(localHistogram, 0, nPes * sizeof(uint32_t));
 
     // allocate private device memory for storing the write offsets;
     // One write offset for each destination PE
@@ -334,8 +317,6 @@ __host__ ShuffleResult shuffle(
     nvshmem_free(localHistogram);
 
     // allocate symmetric memory big enough to fit the largest partition
-    printf("PE %d: Allocating: %u bytes of symmetric memory for tuples after shuffle (%d tuples)\n",
-           thisPe, offsetsResult.maxPartitionSize * tupleSize, offsetsResult.maxPartitionSize);
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
     const uint threadCount = 3;
@@ -350,17 +331,12 @@ __host__ ShuffleResult shuffle(
                            &team, &thisPe, &offsets, const_cast<uint8_t **>(&symmMem),
                            &deviceBuffers};
 
-    printf("Calling shuffleWithOffsets with %d PEs\n", nPes);
     // execute the shuffle on the GPU
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffle_with_offset, 1, threadCount, shuffleArgs, 1024 * 4, stream));
+    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffle_with_offset, 1, threadCount, shuffleArgs, 1024 * 4,
+                                             stream));
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
 
-    // print tuples after shuffle
-
-    usleep(500000 * thisPe);
-
-    print_tuple_result<<<1, 1, 1024 * 4, stream>>>(thisPe, symmMem, tupleSize, offsetsResult.thisPartitionSize);
-
+    printf("PE %d: shuffle finished with %lu tuples\n", thisPe, offsetsResult.thisPartitionSize);
     ShuffleResult result{};
     result.partitionSize = offsetsResult.thisPartitionSize;
     result.tuples = reinterpret_cast<uint8_t *>(malloc(offsetsResult.thisPartitionSize * tupleSize));

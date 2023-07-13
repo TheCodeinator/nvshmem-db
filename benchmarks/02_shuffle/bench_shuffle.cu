@@ -1,4 +1,6 @@
 #include <iostream>
+#include <chrono>
+#include <fstream>
 #include "shuffle.h"
 
 struct shuffle_tuple {
@@ -49,17 +51,8 @@ create_tuple_result create_all_local_tuples(int table_size) {
         for (uint64_t j = 0; j < count_tuples; ++j) {
             tuple_ids[j] = j + count_tuples * i;  // adjusted to ensure unique ids
         }
-        printf("PE %d has tuple ids: ", i);
-        for (uint64_t j = 0; j < count_tuples; ++j) {
-            printf("%lu ", tuple_ids[j]);
-        }
-        printf("\n");
         tuples[i] = create_tuples(tuple_ids, count_tuples);
         num_tuples[i] = count_tuples;
-    }
-    // print num tuples for all pes
-    for (int i = 0; i < nPes; ++i) {
-        printf("PE %d has %lu tuples\n", i, num_tuples[i]);
     }
     return create_tuple_result{
         tuples,
@@ -79,33 +72,35 @@ void call_shuffle(cudaStream_t &stream, shuffle_tuple **local_tuples, uint64_t *
 
     for (uint64_t i{0}; i < result.partitionSize; ++i) {
         // modulo of received tuples should be this PE's ID
-        assert(reinterpret_cast<uint64_t *>(result.tuples)[i * 8] % nPes == thisPe);
+        assert(reinterpret_cast<uint64_t *>(result.tuples)[i * 8 + KEY_OFFSET] % nPes == thisPe);
     }
 }
 
 int main(int argc, char *argv[]) {
-    // Check if a table size argument is given
-    if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <table_size>" << std::endl;
-        return 1;
-    }
-
-    // Convert argument to integer
-    int table_size = std::stoi(argv[1]);
 
     int nPes, thisPe;
     cudaStream_t stream;
 
     nvshmem_init();
     thisPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
-    printf("PE %d: table size %d\n", thisPe, table_size);
     cudaStreamCreate(&stream);
 
-    // Pass the table size to the tuple creation function
-    const create_tuple_result tuple_result = create_all_local_tuples(table_size);
-    call_shuffle(stream, tuple_result.tuples, tuple_result.num_tuples);
+    std::ofstream outfile;
+    outfile.open("shuffle.csv");
+    outfile << "table_size, time" << std::endl;
+
+    for(int table_size{16};table_size<=100000000;table_size*=2) {
+        // Pass the table size to the tuple creation function
+        const create_tuple_result tuple_result = create_all_local_tuples(table_size);
+        auto start = std::chrono::steady_clock::now();
+        call_shuffle(stream, tuple_result.tuples, tuple_result.num_tuples);
+        auto end = std::chrono::steady_clock::now();
+        auto dur = end-start;
+        auto time_ms = dur.count()*1e-6;
+
+        outfile << table_size << ", " << time_ms << "\n";
+    }
 
     nvshmem_finalize();
     return 0;
 }
-

@@ -161,6 +161,7 @@ int main(int argc, char *argv[]) {
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
     n_pes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
+    printf("Hello from PE %d of %d\n", this_pe, n_pes);
     cudaSetDevice(this_pe);
     cudaStreamCreate(&stream);
 

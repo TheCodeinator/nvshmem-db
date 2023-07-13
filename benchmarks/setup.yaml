@@ -1,4 +1,4 @@
-- name: Run benchmarks
+- name: Setup source
   hosts: all
   vars:
     benchmarks:

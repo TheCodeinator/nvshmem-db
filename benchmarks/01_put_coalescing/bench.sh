@@ -1,16 +1,3 @@
 #!/bin/bash
 
-# Only table size parameter for now
-
-# Make sure one parameter is given, which is a positive integer
-
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <table_size>"
-    exit 1
-fi
-
-if ! [[ $1 =~ ^[0-9]+$ ]]; then
-    echo "Usage: $0 <table_size>"
-    exit 1
-fi
-
+nvshmrun -n 2 -ppn 1 --hosts 10.0.2.11,10.0.2.12 ./bench_01_put_coalescing

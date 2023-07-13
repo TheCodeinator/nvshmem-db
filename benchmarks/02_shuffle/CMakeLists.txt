@@ -1,4 +1,4 @@
-project(bench_02_shuffle LANGUAGES CXX CUDA)
+#project(bench_02_shuffle LANGUAGES CXX CUDA)
 add_executable(bench_02_shuffle bench_shuffle.cu)
 add_dependencies(bench_02_shuffle nvshmem-db)
 target_link_libraries(bench_02_shuffle nvshmem-db)

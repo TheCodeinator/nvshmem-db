@@ -107,8 +107,8 @@ int main() {
     cudaStream_t stream;
 
     nvshmem_init();
-    thisPe = nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE);
-    cudaSetDevice(thisPe);
+    thisPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
+//    cudaSetDevice(thisPe);
     cudaStreamCreate(&stream);
 
     const create_tuple_result tuple_result = create_all_local_tuples();

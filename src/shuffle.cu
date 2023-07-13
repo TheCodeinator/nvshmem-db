@@ -283,7 +283,7 @@ __global__ void print_tuple_result(const uint32_t thisPe, const uint8_t *const d
  * @param team
  * @return
  */
-__host__ ShuffleResult shuffle(
+__host__ ShuffleResult shuffle_db(
         const uint8_t *const localData, // ptr to device data
         uint16_t tupleSize,
         uint64_t tupleCount,

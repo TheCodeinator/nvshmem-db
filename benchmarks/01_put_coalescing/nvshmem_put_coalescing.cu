@@ -29,8 +29,6 @@
     } while (0)
 
 
-constexpr size_t N_ELEMS{1024 * 1024};
-constexpr size_t N_ITERATIONS{10};
 constexpr long long SHADER_FREQ_KHZ{1530000};
 
 struct TimeMeas {
@@ -41,13 +39,12 @@ struct TimeMeas {
         return stop - start;
     }
 
-    __host__ __device__ [[nodiscard]] double diff_ms() {
+    __host__ __device__ [[nodiscard]] double diff_ms() const {
         // NOTE: long double type not supported in device code (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html: 14.5.15)
         return static_cast<double>(this->diff()) / SHADER_FREQ_KHZ;
     }
 };
 
-// TODO: also print in ms
 // TODO: verify results make sense
 
 
@@ -58,7 +55,9 @@ enum SendState {
 
 __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
                                         const int other_pe,
-                                        uint32_t *const flag) {
+                                        uint32_t *const flag,
+                                        const uint32_t n_elems,
+                                        const uint32_t n_iterations) {
     TimeMeas time{};
 
     // sync with other PE to make them start simultaneously
@@ -67,8 +66,8 @@ __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
     time.start = clock64();
 
     // send data to other PE at same position
-    for (size_t it{0}; it < N_ITERATIONS; ++it) {
-        for (size_t i{0}; i < N_ELEMS; ++i) {
+    for (size_t it{0}; it < n_iterations; ++it) {
+        for (size_t i{0}; i < n_elems; ++i) {
             nvshmem_uint8_put_nbi(data + i,
                                   data + i,
                                   1,
@@ -93,7 +92,9 @@ __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
 
 __device__ TimeMeas send_one_thread_once(uint8_t *const data,
                                          const int other_pe,
-                                         uint32_t *const flag) {
+                                         uint32_t *const flag,
+                                         const uint32_t n_elems,
+                                         const uint32_t n_iterations) {
     TimeMeas time{};
 
     // synchronize with other PE to make them start next test simultaneously
@@ -102,10 +103,10 @@ __device__ TimeMeas send_one_thread_once(uint8_t *const data,
     time.start = clock64();
 
     // send data in one go
-    for (size_t it{0}; it < N_ITERATIONS; ++it) {
+    for (size_t it{0}; it < n_iterations; ++it) {
         nvshmem_uint8_put_nbi(data,
                               data,
-                              N_ELEMS,
+                              n_elems,
                               other_pe);
     }
 
@@ -125,7 +126,8 @@ __device__ TimeMeas send_one_thread_once(uint8_t *const data,
 
 __device__ TimeMeas time_recv(uint8_t *const data,
                               const int other_pe,
-                              volatile uint32_t *const flag) {
+                              volatile uint32_t *const flag,
+                              const uint32_t n_elems) {
     TimeMeas time{};
 
     // sync with other PE to make them start simultaneously
@@ -141,13 +143,13 @@ __device__ TimeMeas time_recv(uint8_t *const data,
     time.stop = clock64();
 
     // verify correctness
-    for (size_t i{0}; i < N_ELEMS; ++i) {
+    for (size_t i{0}; i < n_elems; ++i) {
         // write lower bits of index to every element
         assert(data[i] == static_cast<uint8_t>(i));
     }
 
     // reset receive buffer and flag for next test
-    memset(data, 0, N_ELEMS);
+    memset(data, 0, n_elems);
     *flag = SendState::RUNNING;
 
     return time;
@@ -156,13 +158,15 @@ __device__ TimeMeas time_recv(uint8_t *const data,
 
 __global__ void exchange_data(int this_pe,
                               uint8_t *const data,
-                              uint32_t *const flag) {
+                              uint32_t *const flag,
+                              const uint32_t n_elems,
+                              const uint32_t n_iterations) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
 
     // PE 0 is the sender
     if (this_pe == 0) {
         // populate data to send to PE 1
-        for (size_t i{0}; i < N_ELEMS; ++i) {
+        for (size_t i{0}; i < n_elems; ++i) {
             // write lower bits of index to every element
             data[i] = static_cast<uint8_t >(i);
         }
@@ -172,15 +176,15 @@ __global__ void exchange_data(int this_pe,
         *flag = SendState::FINISHED;
 
         if (threadIdx.x == 0) {
-            TimeMeas time = send_one_thread_sep(data, other_pe, flag);
-            printf("send_one_thread_sep: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
+            TimeMeas time = send_one_thread_sep(data, other_pe, flag, n_elems, n_iterations);
+            printf("send_one_thread_sep: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
         if (threadIdx.x == 0) {
-            TimeMeas time = send_one_thread_once(data, other_pe, flag);
-            printf("send_one_thread_once: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
+            TimeMeas time = send_one_thread_once(data, other_pe, flag, n_elems, n_iterations);
+            printf("send_one_thread_once: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
     } else { // PE 1 is the receiver
@@ -190,23 +194,33 @@ __global__ void exchange_data(int this_pe,
         // receiver does not do anything but waiting, only needs one thread in all scenarios
 
         if (threadIdx.x == 0) {
-            TimeMeas time = time_recv(data, other_pe, flag_vol);
-            printf("recv(send_one_thread_sep): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
+            TimeMeas time = time_recv(data, other_pe, flag_vol, n_elems);
+            printf("recv(send_one_thread_sep): elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
         if (threadIdx.x == 0) {
-            TimeMeas time = time_recv(data, other_pe, flag_vol);
-            printf("recv(send_one_thread_once): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
+            TimeMeas time = time_recv(data, other_pe, flag_vol, n_elems);
+            printf("recv(send_one_thread_once): elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
         }
     }
 }
 
+/**
+ * cmd arguments:
+ * 0) program name (implicit)
+ * 1) number of elements
+ * 2) number of iterations
+ */
 int main(int argc, char *argv[]) {
     // init nvshmem
     int n_pes, this_pe;
     cudaStream_t stream;
+
+    assert(argc == 3);
+    const u_int32_t n_elems = stoi(argv[1]);
+    const u_int32_t n_iterations = stoi(argv[1]);
 
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
@@ -218,13 +232,15 @@ int main(int argc, char *argv[]) {
     assert(n_pes == 2);
 
     // allocate symmetric device memory for sending/receiving the data
-    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(N_ELEMS));
+    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(n_elems));
     auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
     // call benchmarking kernel
     void *args[] = {&this_pe,
                     const_cast<uint8_t **>(&data),
-                    const_cast<int **>(&flag)};
+                    const_cast<int **>(&flag),
+                    const_cast<uint32_t*>(&n_elems),
+                    const_cast<uint32_t*>(&n_iterations)};
     NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) exchange_data, 1, 1, args, 1024 * 4, stream));
 
     // wait for kernel to finish

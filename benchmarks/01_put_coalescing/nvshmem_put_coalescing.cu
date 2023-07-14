@@ -28,19 +28,120 @@
         }                                                                                  \
     } while (0)
 
+struct TimeMeas {
+    long long start = 0;
+    long long stop = 0;
+
+    __host__ __device__ [[nodiscard]] inline long long diff() const {
+        return stop - start;
+    }
+};
+
 constexpr size_t N_ELEMS{1024 * 1024};
+constexpr size_t N_ITERATIONS{10};
 constexpr int TEST_1_SEND_DONE{1};
 constexpr int TEST_2_SEND_DONE{2};
+
+__device__ TimeMeas send_one_thread_sep(uint8_t *const data,
+                                        const int other_pe,
+                                        int *const flag) {
+    TimeMeas time{};
+
+    // sync with other PE to make them start simultaneously
+    nvshmem_barrier_all();
+
+    time.start = clock64();
+
+    // send data to other PE at same position
+    for (size_t it{0}; it < N_ITERATIONS; ++it) {
+        for (size_t i{0}; i < N_ELEMS; ++i) {
+            nvshmem_uint8_put_nbi(data + i,
+                                  data + i,
+                                  1,
+                                  other_pe);
+        }
+    }
+
+    // let following mem operations be executed after the previous sending
+    nvshmem_fence();
+
+    // atomically set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
+    nvshmem_int_atomic_set(flag, TEST_1_SEND_DONE, 1);
+
+    // make sure all send buffers are reusable
+    nvshmem_quiet();
+
+    time.stop = clock64();
+
+    return time;
+}
+
+
+__device__ TimeMeas send_one_thread_once(uint8_t *const data,
+                                         const int other_pe,
+                                         int *const flag) {
+    TimeMeas time{};
+
+    // synchronize with other PE to make them start next test simultaneously
+    nvshmem_barrier_all();
+
+    time.start = clock64();
+
+    // send data in one go
+    for (size_t it{0}; it < N_ITERATIONS; ++it) {
+        nvshmem_uint8_put_nbi(data,
+                              data,
+                              N_ELEMS,
+                              other_pe);
+    }
+
+    // let following mem operations be executed after the previous sending
+    nvshmem_fence();
+
+    // atomically set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
+    nvshmem_int_atomic_set(flag, TEST_2_SEND_DONE, 1);
+
+    // make sure all send buffers are reusable
+    nvshmem_quiet();
+
+    time.stop = clock64();
+
+    return time;
+}
+
+__device__ TimeMeas time_recv(uint8_t *const data,
+                     const int other_pe,
+                     int *const flag) {
+    TimeMeas time{};
+
+    // sync with other PE to make them start simultaneously
+    nvshmem_barrier_all();
+
+    time.start = clock64();
+
+    // wait until flag has been delivered, this then indicates all previous data has been delivered
+    nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_1_SEND_DONE);
+
+    time.stop = clock64();
+
+    // verify correctness
+    for (size_t i{0}; i < N_ELEMS; ++i) {
+//        printf("i=%lld, data[i]=%hu\n", i, data[i]);
+        // write lower bits of index to every element
+        assert(data[i] == static_cast<uint8_t>(i));
+    }
+
+    // reset receive buffer for next test
+    memset(data, 0, N_ELEMS);
+
+    return time;
+}
+
 
 __global__ void exchange_data(int this_pe,
                               uint8_t *const data,
                               int *const flag) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
-
-    // we only use one thread
-    if (threadIdx.x != 0) {
-        return;
-    }
 
     // PE 0 is the sender
     if (this_pe == 0) {
@@ -50,106 +151,32 @@ __global__ void exchange_data(int this_pe,
             data[i] = static_cast<uint8_t >(i);
         }
 
-        // sync with other PE to make them start simultaneously
-        nvshmem_barrier_all();
-
-        long long start_time = clock64();
-
-        // send data to other PE at same position
-        for (size_t i{0}; i < N_ELEMS; ++i) {
-            nvshmem_uint8_put_nbi(data + i,
-                                  data + i,
-                                  1,
-                                  other_pe);
+        if (threadIdx.x == 0) {
+            TimeMeas time = send_one_thread_sep(data, other_pe, flag);
+            printf("send_one_thread_sep: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
         }
 
-        // let following mem operations be executed after the previous sending
-        nvshmem_fence();
-
-        // atomically set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
-        nvshmem_int_atomic_set(flag, TEST_1_SEND_DONE, 1);
-
-        // make sure all send buffers are reusable
-        nvshmem_quiet();
-
-        long long stop_time = clock64();
-        long long elapsed_time = stop_time - start_time;
-
-        printf("Sender: time for sending %lu elems separately and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
-
-        // TODO: return result in CSV format
-
-        // synchronize with other PE to make them start next test simultaneously
-        nvshmem_barrier_all();
-
-        start_time = clock64();
-
-        // send data in one go
-        nvshmem_uint8_put_nbi(data,
-                              data,
-                              N_ELEMS,
-                              other_pe);
-
-        // let following mem operations be executed after the previous sending
-        nvshmem_fence();
-
-        // atomically set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
-        nvshmem_int_atomic_set(flag, TEST_2_SEND_DONE, 1);
-
-        // make sure all send buffers are reusable
-        nvshmem_quiet();
-
-        stop_time = clock64();
-        elapsed_time = stop_time - start_time;
-
-        printf("Sender: time for sending %lu elems at once and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
+        if (threadIdx.x == 0) {
+            TimeMeas time = send_one_thread_once(data, other_pe, flag);
+            printf("send_one_thread_once: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
+        }
 
     } else { // PE 1 is the receiver
-        // sync with other PE to make them start simultaneously
-        nvshmem_barrier_all();
+        // receiver does not do anything but waiting, only needs one thread in all scenarios
 
-        long long start_time = clock64();
-
-        // wait until flag has been delivered, this then indicates all previous data has been delivered
-        nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_1_SEND_DONE);
-
-        long long stop_time = clock64();
-        auto elapsed_time = stop_time - start_time;
-
-        printf("Receiver: time until all %lu elems have been received separately: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
-
-        // verify correctness
-        for (size_t i{0}; i < N_ELEMS; ++i) {
-            // write lower bits of index to every element
-            assert(data[i] == static_cast<uint8_t>(i));
+        if (threadIdx.x == 0) {
+            TimeMeas time = time_recv(data, other_pe, flag);
+            printf("recv(send_one_thread_sep): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
         }
 
-        // TODO: emit time in proper CSV format
-
-        // reset receive buffer for next test
-        memset(data, 0, N_ELEMS);
-
-        // synchronize with other PE to make them start next test simultaneously
-        nvshmem_barrier_all();
-
-        start_time = clock64();
-
-        // wait until flag has been delivered, this then indicates all previous data has been delivered
-        nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_2_SEND_DONE);
-
-        stop_time = clock64();
-        elapsed_time = stop_time - start_time;
-
-        printf("Receiver: time until all %lu elems have been received at once: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
-
-        // verify correctness
-        for (size_t i{0}; i < N_ELEMS; ++i) {
-            // write lower bits of index to every element
-            assert(data[i] == static_cast<uint8_t>(i));
+        if (threadIdx.x == 0) {
+            TimeMeas time = time_recv(data, other_pe, flag);
+            printf("recv(send_one_thread_once): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
         }
-
-        // TODO: emit time in proper CSV format
-
     }
 }
 

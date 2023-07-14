@@ -124,6 +124,54 @@ __device__ TimeMeas send_one_thread_once(uint8_t *const data,
     return time;
 }
 
+__device__ TimeMeas send_multi_thread_sep(uint8_t *const data,
+                                          const int other_pe,
+                                          uint32_t *const flag,
+                                          const uint32_t n_elems,
+                                          const uint32_t n_iterations) {
+    const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t thread_stride = blockDim.x * gridDim.y;
+    TimeMeas time{};
+
+    // sync with other PE to make them start simultaneously
+    if (thread_global_id == 0) {
+        nvshmem_barrier_all();
+    }
+
+    if (thread_global_id == 0) {
+        time.start = clock64();
+    }
+
+    __syncthreads();
+
+    // send data to other PE at same position
+    for (size_t it{0}; it < n_iterations; ++it) {
+        for (size_t i{thread_global_id}; i < n_elems; i += thread_stride) {
+            nvshmem_uint8_put_nbi(data + i,
+                                  data + i,
+                                  1,
+                                  other_pe);
+        }
+    }
+
+    // let following mem operations be executed after the previous sending
+    nvshmem_fence();
+
+    // set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
+    if (thread_global_id == 0) {
+        nvshmem_uint32_put_nbi(flag, flag, 1, other_pe); // send flag
+    }
+
+    // make sure all send buffers are reusable
+    nvshmem_quiet();
+
+    if (thread_global_id == 0) {
+        time.stop = clock64();
+    }
+
+    return time;
+}
+
 __device__ TimeMeas time_recv(uint8_t *const data,
                               const int other_pe,
                               volatile uint32_t *const flag,
@@ -137,8 +185,6 @@ __device__ TimeMeas time_recv(uint8_t *const data,
 
     // wait until flag has been delivered, this then indicates all previous data has been delivered
     while (*flag == SendState::RUNNING);
-
-//    nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, SEND_FINISHED);
 
     time.stop = clock64();
 
@@ -162,29 +208,39 @@ __global__ void exchange_data(int this_pe,
                               const uint32_t n_elems,
                               const uint32_t n_iterations) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
+    const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
+    const uint32_t thread_stride = blockDim.x * gridDim.y;
 
     // PE 0 is the sender
     if (this_pe == 0) {
         // populate data to send to PE 1
-        for (size_t i{0}; i < n_elems; ++i) {
+        for (size_t i{thread_global_id}; i < n_elems; i += thread_stride) {
             // write lower bits of index to every element
-            data[i] = static_cast<uint8_t >(i);
+            data[i] = static_cast<uint8_t>(i);
         }
 
         // set local flag to finished state on this PE, send flag every time the sender is finished
         // Receiver will reset its local instance of the flag after each of the tests
         *flag = SendState::FINISHED;
 
-        if (threadIdx.x == 0) {
+        if (thread_global_id == 0) {
             TimeMeas time = send_one_thread_sep(data, other_pe, flag, n_elems, n_iterations);
             printf("send_one_thread_sep: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
                    n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
-        if (threadIdx.x == 0) {
+        if (thread_global_id == 0) {
             TimeMeas time = send_one_thread_once(data, other_pe, flag, n_elems, n_iterations);
             printf("send_one_thread_once: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
                    n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+        }
+
+        {
+            TimeMeas time = send_multi_thread_sep(data, other_pe, flag, n_elems, n_iterations);
+            if (thread_global_id == 0) {
+                printf("send_multi_thread_sep: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
+                       n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+            }
         }
 
     } else { // PE 1 is the receiver
@@ -193,16 +249,17 @@ __global__ void exchange_data(int this_pe,
 
         // receiver does not do anything but waiting, only needs one thread in all scenarios
 
-        if (threadIdx.x == 0) {
-            TimeMeas time = time_recv(data, other_pe, flag_vol, n_elems);
-            printf("recv(send_one_thread_sep): elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
-        }
+        constexpr size_t n_tests{3};
+        const char *test_names[] = {"recv(send_one_thread_sep)",
+                                    "recv(send_one_thread_once)",
+                                    "recv(send_multi_thread_sep"};
 
-        if (threadIdx.x == 0) {
-            TimeMeas time = time_recv(data, other_pe, flag_vol, n_elems);
-            printf("recv(send_one_thread_once): elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+        if (thread_global_id == 0) {
+            for (size_t i{0}; i < n_tests; ++i) {
+                TimeMeas time = time_recv(data, other_pe, flag_vol, n_elems);
+                printf("%s: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
+                       test_names[i], n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+            }
         }
     }
 }
@@ -212,15 +269,19 @@ __global__ void exchange_data(int this_pe,
  * 0) program name (implicit)
  * 1) number of elements
  * 2) number of iterations
+ * 3) grid dims
+ * 4) block dims
  */
 int main(int argc, char *argv[]) {
     // init nvshmem
     int n_pes, this_pe;
     cudaStream_t stream;
 
-    assert(argc == 3);
+    assert(argc == 5);
     const u_int32_t n_elems = stoi(argv[1]);
-    const u_int32_t n_iterations = stoi(argv[1]);
+    const u_int32_t n_iterations = stoi(argv[2]);
+    const u_int32_t grid_dim = stoi(argv[3]);
+    const u_int32_t block_dim = stoi(argv[4]);
 
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
@@ -239,9 +300,10 @@ int main(int argc, char *argv[]) {
     void *args[] = {&this_pe,
                     const_cast<uint8_t **>(&data),
                     const_cast<int **>(&flag),
-                    const_cast<uint32_t*>(&n_elems),
-                    const_cast<uint32_t*>(&n_iterations)};
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) exchange_data, 1, 1, args, 1024 * 4, stream));
+                    const_cast<uint32_t *>(&n_elems),
+                    const_cast<uint32_t *>(&n_iterations)};
+    NVSHMEM_CHECK(
+            nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
 
     // wait for kernel to finish
     CUDA_CHECK(cudaDeviceSynchronize());

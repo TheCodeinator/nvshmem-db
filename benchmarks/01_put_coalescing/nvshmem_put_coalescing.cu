@@ -142,6 +142,7 @@ __device__ TimeMeas send_multi_thread_sep(uint8_t *const data,
         time.start = clock64();
     }
 
+    // start for loop together
     __syncthreads();
 
     // send data to other PE at same position

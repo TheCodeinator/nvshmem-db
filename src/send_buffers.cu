@@ -27,7 +27,7 @@ __device__ uint8_t *SendBuffers::getBuffer(uint bufferIndex)
 {
     return buffers + bufferIndex * bufferSize * nPes;
 }
-__device__ uint8_t *SendBuffers::currentBuffers()
+__device__ uint8_t *SendBuffers::currentBuffer()
 {
     return getBuffer(bufferInUse);
 }

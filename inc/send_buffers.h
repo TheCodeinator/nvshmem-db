@@ -37,7 +37,7 @@ public:
     __device__ uint32_t currentBufferIndex() const;
 
     __device__ uint8_t *getBuffer(uint bufferIndex);
-    __device__ uint8_t *currentBuffers();
+    __device__ uint8_t *currentBuffer();
 
     __device__ uint32_t *getOffsets(uint bufferIndex);
     __device__ uint32_t *currentOffsets();

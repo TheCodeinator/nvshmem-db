@@ -38,20 +38,16 @@ __device__ void histLocalAtomic(const uint8_t *const localData,
 
     __syncthreads();
 
-    // Translate batch counts to offsets
-    if (tid == 0) {
-        printf("PE %d: batchCount: %d, threadCount: %d, peCount: %d\n", thisPe, threadOffsets->batchCount, threadOffsets->threadCount, nPes);
-        for (uint32_t batch = 0; batch < threadOffsets->batchCount; ++batch) { // TODO: parallelize this
-            for (uint32_t pe = 0; pe < nPes; ++pe) { // TODO: parallelize this
-                uint32_t currentOffset = 0;
-                for (uint32_t thread = 0; thread < threadOffsets->threadCount; ++thread) {
-                    uint32_t *offset = threadOffsets->getOffset(batch, thread, pe);
-                    uint32_t tmp = *offset;
-                    *offset = currentOffset;
-                    currentOffset += tmp;
-                    printf("PE %d: batch %d, thread %d, pe %d, offset %d, count (tmp) %d\n", thisPe, batch, thread, pe, *offset, tmp);
-                }
-            }
+    for (uint32_t i = tid; i < threadOffsets->batchCount * threadOffsets->nPes; i += threadOffsets->threadCount) {
+        uint32_t batch = i / threadOffsets->nPes;
+        uint32_t dest = i % threadOffsets->nPes;
+        uint32_t currentOffset = 0;
+        for (uint32_t thread = 0; thread < threadOffsets->threadCount; ++thread) {
+            uint32_t *offset = threadOffsets->getOffset(batch, thread, dest);
+            uint32_t tmp = *offset;
+            *offset = currentOffset;
+            currentOffset += tmp;
+            printf("PE %d: batch %d, thread %d, dest %d, offset %d, count (tmp) %d\n", thisPe, batch, thread, dest, *offset, tmp);
         }
     }
 }

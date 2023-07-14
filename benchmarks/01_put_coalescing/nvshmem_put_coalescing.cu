@@ -28,6 +28,11 @@
         }                                                                                  \
     } while (0)
 
+
+constexpr size_t N_ELEMS{1024 * 1024};
+constexpr size_t N_ITERATIONS{10};
+constexpr long long SHADER_FREQ_KHZ{1530000};
+
 struct TimeMeas {
     long long start = 0;
     long long stop = 0;
@@ -35,16 +40,25 @@ struct TimeMeas {
     __host__ __device__ [[nodiscard]] inline long long diff() const {
         return stop - start;
     }
+
+    __host__ __device__ [[nodiscard]] double diff_ms() {
+        // NOTE: long double type not supported in device code (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html: 14.5.15)
+        return static_cast<double>(this->diff()) / SHADER_FREQ_KHZ;
+    }
 };
 
-constexpr size_t N_ELEMS{1024 * 1024};
-constexpr size_t N_ITERATIONS{10};
-constexpr int TEST_1_SEND_DONE{1};
-constexpr int TEST_2_SEND_DONE{2};
+// TODO: also print in ms
+// TODO: verify results make sense
+
+
+enum SendState {
+    RUNNING = 0,
+    FINISHED = 1,
+};
 
 __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
                                         const int other_pe,
-                                        int *const flag) {
+                                        uint32_t *const flag) {
     TimeMeas time{};
 
     // sync with other PE to make them start simultaneously
@@ -65,8 +79,8 @@ __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
     // let following mem operations be executed after the previous sending
     nvshmem_fence();
 
-    // atomically set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
-    nvshmem_int_atomic_set(flag, TEST_1_SEND_DONE, 1);
+    // set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
+    nvshmem_uint32_put_nbi(flag, flag, 1, other_pe); // send flag
 
     // make sure all send buffers are reusable
     nvshmem_quiet();
@@ -79,7 +93,7 @@ __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
 
 __device__ TimeMeas send_one_thread_once(uint8_t *const data,
                                          const int other_pe,
-                                         int *const flag) {
+                                         uint32_t *const flag) {
     TimeMeas time{};
 
     // synchronize with other PE to make them start next test simultaneously
@@ -98,8 +112,8 @@ __device__ TimeMeas send_one_thread_once(uint8_t *const data,
     // let following mem operations be executed after the previous sending
     nvshmem_fence();
 
-    // atomically set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
-    nvshmem_int_atomic_set(flag, TEST_2_SEND_DONE, 1);
+    // set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
+    nvshmem_uint32_put_nbi(flag, flag, 1, other_pe);
 
     // make sure all send buffers are reusable
     nvshmem_quiet();
@@ -110,8 +124,8 @@ __device__ TimeMeas send_one_thread_once(uint8_t *const data,
 }
 
 __device__ TimeMeas time_recv(uint8_t *const data,
-                     const int other_pe,
-                     int *const flag) {
+                              const int other_pe,
+                              volatile uint32_t *const flag) {
     TimeMeas time{};
 
     // sync with other PE to make them start simultaneously
@@ -120,7 +134,9 @@ __device__ TimeMeas time_recv(uint8_t *const data,
     time.start = clock64();
 
     // wait until flag has been delivered, this then indicates all previous data has been delivered
-    nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_1_SEND_DONE);
+    while (*flag == SendState::RUNNING);
+
+//    nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, SEND_FINISHED);
 
     time.stop = clock64();
 
@@ -131,8 +147,9 @@ __device__ TimeMeas time_recv(uint8_t *const data,
         assert(data[i] == static_cast<uint8_t>(i));
     }
 
-    // reset receive buffer for next test
+    // reset receive buffer and flag for next test
     memset(data, 0, N_ELEMS);
+    *flag = SendState::RUNNING;
 
     return time;
 }
@@ -140,7 +157,7 @@ __device__ TimeMeas time_recv(uint8_t *const data,
 
 __global__ void exchange_data(int this_pe,
                               uint8_t *const data,
-                              int *const flag) {
+                              uint32_t *const flag) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
 
     // PE 0 is the sender
@@ -150,6 +167,10 @@ __global__ void exchange_data(int this_pe,
             // write lower bits of index to every element
             data[i] = static_cast<uint8_t >(i);
         }
+
+        // set local flag to finished state on this PE, send flag every time the sender is finished
+        // Receiver will reset its local instance of the flag after each of the tests
+        *flag = SendState::FINISHED;
 
         if (threadIdx.x == 0) {
             TimeMeas time = send_one_thread_sep(data, other_pe, flag);
@@ -164,16 +185,19 @@ __global__ void exchange_data(int this_pe,
         }
 
     } else { // PE 1 is the receiver
+        // make reads from flag volatile
+        volatile uint32_t *flag_vol = flag;
+
         // receiver does not do anything but waiting, only needs one thread in all scenarios
 
         if (threadIdx.x == 0) {
-            TimeMeas time = time_recv(data, other_pe, flag);
+            TimeMeas time = time_recv(data, other_pe, flag_vol);
             printf("recv(send_one_thread_sep): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
                    N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
         }
 
         if (threadIdx.x == 0) {
-            TimeMeas time = time_recv(data, other_pe, flag);
+            TimeMeas time = time_recv(data, other_pe, flag_vol);
             printf("recv(send_one_thread_once): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
                    N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
         }
@@ -188,7 +212,6 @@ int main(int argc, char *argv[]) {
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
     n_pes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
-    printf("Hello from PE %d of %d\n", this_pe, n_pes);
     cudaSetDevice(this_pe);
     cudaStreamCreate(&stream);
 
@@ -197,7 +220,7 @@ int main(int argc, char *argv[]) {
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data = static_cast<uint8_t *>(nvshmem_malloc(N_ELEMS));
-    auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(int)));
+    auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
     // call benchmarking kernel
     void *args[] = {&this_pe,

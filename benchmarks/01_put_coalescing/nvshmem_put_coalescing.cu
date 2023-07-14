@@ -174,14 +174,14 @@ __global__ void exchange_data(int this_pe,
 
         if (threadIdx.x == 0) {
             TimeMeas time = send_one_thread_sep(data, other_pe, flag);
-            printf("send_one_thread_sep: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
+            printf("send_one_thread_sep: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
         if (threadIdx.x == 0) {
             TimeMeas time = send_one_thread_once(data, other_pe, flag);
-            printf("send_one_thread_once: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
+            printf("send_one_thread_once: elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
     } else { // PE 1 is the receiver
@@ -192,14 +192,14 @@ __global__ void exchange_data(int this_pe,
 
         if (threadIdx.x == 0) {
             TimeMeas time = time_recv(data, other_pe, flag_vol);
-            printf("recv(send_one_thread_sep): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
+            printf("recv(send_one_thread_sep): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
         }
 
         if (threadIdx.x == 0) {
             TimeMeas time = time_recv(data, other_pe, flag_vol);
-            printf("recv(send_one_thread_once): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld\n",
-                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff());
+            printf("recv(send_one_thread_once): elems=%lu, iterations=%lu, start=%lld, stop=%lld time=%lld (%fms)\n",
+                   N_ELEMS, N_ITERATIONS, time.start, time.stop, time.diff(), time.diff_ms());
         }
     }
 }

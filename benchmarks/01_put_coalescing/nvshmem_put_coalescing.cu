@@ -142,7 +142,6 @@ __device__ TimeMeas time_recv(uint8_t *const data,
 
     // verify correctness
     for (size_t i{0}; i < N_ELEMS; ++i) {
-//        printf("i=%lld, data[i]=%hu\n", i, data[i]);
         // write lower bits of index to every element
         assert(data[i] == static_cast<uint8_t>(i));
     }

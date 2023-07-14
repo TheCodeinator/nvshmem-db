@@ -46,6 +46,7 @@ struct TimeMeas {
 };
 
 // TODO: verify results make sense
+// TODO: return results to CPU and print in csv format
 
 
 enum SendState {

@@ -78,6 +78,11 @@ void call_shuffle(cudaStream_t &stream, shuffle_tuple **local_tuples, uint64_t *
 
 int main(int argc, char *argv[]) {
 
+    if (argc != 2) {
+        std::cout << "Usage: " << argv[0] << " <nhosts_ppn>" << std::endl;
+        return 1;
+    }
+
     int nPes, thisPe;
     cudaStream_t stream;
 
@@ -86,7 +91,10 @@ int main(int argc, char *argv[]) {
     cudaStreamCreate(&stream);
 
     std::ofstream outfile;
-    outfile.open("shuffle.csv");
+    std::string arg(argv[1]);
+    std::string filename = "shuffle_" + arg + ".csv";
+    outfile.open(filename.c_str());
+
     outfile << "table_size, time" << std::endl;
 
     for(int table_size{16};table_size<=100000000;table_size*=2) {

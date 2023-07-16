@@ -1,4 +1,4 @@
-#include "send_buffers.h"
+#include "shuffle_data.h"
 
 
 __host__ SendBuffers::SendBuffers(ShuffleData *data) :
@@ -85,8 +85,8 @@ __host__ ShuffleData::ShuffleData(uint32_t peCount, uint32_t threadCount, uint64
         sendBuffers(SendBuffers(this)),
         threadOffsets(ThreadOffsets(this))
 {
-    printf("ShuffleData: peCount=%u, threadCount=%u, tupleCount=%lu, tupleSize=%u, keyOffset=%u, sendBufferSizeMultiplier=%u, sendBuffersizeInTuples=%u, sendBufferSize=%u\n",
-           peCount, threadCount, tupleCount, tupleSize, keyOffset, sendBufferSizeMultiplier, sendBufferSizeInTuples, sendBufferSize);
+    //printf("ShuffleData: peCount=%u, threadCount=%u, tupleCount=%lu, tupleSize=%u, keyOffset=%u, sendBufferSizeMultiplier=%u, sendBuffersizeInTuples=%u, sendBufferSize=%u\n",
+    //       peCount, threadCount, tupleCount, tupleSize, keyOffset, sendBufferSizeMultiplier, sendBufferSizeInTuples, sendBufferSize);
 }
 __host__ ShuffleData::~ShuffleData() = default;
 

@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <cuda.h>
+#include <c++/10/array>
 #include "nvshmem.h"
 
 // used to check the status code of cuda routines for errors
@@ -30,41 +31,63 @@
 
 
 constexpr long long SHADER_FREQ_KHZ{1530000};
+constexpr long long SHADER_FREQ_HZ{1530};
 
-struct TimeMeas {
+struct Meas {
     long long start = 0;
     long long stop = 0;
 
-    __host__ __device__ [[nodiscard]] inline long long diff() const {
+    __host__  [[nodiscard]] inline long long clock_diff() const {
         return stop - start;
     }
 
-    __host__ __device__ [[nodiscard]] double diff_ms() const {
-        // NOTE: long double type not supported in device code (https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html: 14.5.15)
-        return static_cast<double>(this->diff()) / SHADER_FREQ_KHZ;
+    __host__  [[nodiscard]] long double time_diff_ms() const {
+        return static_cast<long double>(this->clock_diff()) / SHADER_FREQ_KHZ;
+    }
+
+    __host__  [[nodiscard]] long double time_diff_s() const {
+        return static_cast<long double>(this->clock_diff()) / SHADER_FREQ_HZ;
+    }
+
+    __host__ [[nodiscard]] long double get_throughput(const uint64_t n_bytes) const {
+        return n_bytes / this->time_diff_s() / 1000000;
+    }
+
+    __host__ [[nodiscard]] std::string to_csv() const {
+        // TODO: @Alex If you want, use this to implement printing to csv format
+        return {};
+    }
+
+    __host__ std::string to_string(const uint64_t n_bytes) const {
+        return "start=" + std::to_string(start) +
+               " stop=" + std::to_string(stop) +
+               " clock_diff=" + std::to_string(this->clock_diff()) +
+               " (" + std::to_string(this->time_diff_ms()) +
+               "ms) throughput=" + std::to_string(this->get_throughput(n_bytes)) + " GB/s";
     }
 };
 
 // TODO: verify results make sense
 // TODO: return results to CPU and print in csv format
 
+constexpr size_t N_TESTS{3};
 
 enum SendState {
     RUNNING = 0,
     FINISHED = 1,
 };
 
-__device__ TimeMeas send_one_thread_sep(uint8_t *const data,
-                                        const int other_pe,
-                                        uint32_t *const flag,
-                                        const uint32_t n_elems,
-                                        const uint32_t n_iterations) {
-    TimeMeas time{};
+__device__ Meas send_one_thread_sep(uint8_t *const data,
+                                    const int other_pe,
+                                    uint32_t *const flag,
+                                    const uint64_t n_elems,
+                                    const uint64_t n_iterations) {
+    Meas meas{};
 
     // sync with other PE to make them start simultaneously
     nvshmem_barrier_all();
 
-    time.start = clock64();
+    meas.start = clock64();
 
     // send data to other PE at same position
     for (size_t it{0}; it < n_iterations; ++it) {
@@ -85,23 +108,23 @@ __device__ TimeMeas send_one_thread_sep(uint8_t *const data,
     // make sure all send buffers are reusable
     nvshmem_quiet();
 
-    time.stop = clock64();
+    meas.stop = clock64();
 
-    return time;
+    return meas;
 }
 
 
-__device__ TimeMeas send_one_thread_once(uint8_t *const data,
-                                         const int other_pe,
-                                         uint32_t *const flag,
-                                         const uint32_t n_elems,
-                                         const uint32_t n_iterations) {
-    TimeMeas time{};
+__device__ Meas send_one_thread_once(uint8_t *const data,
+                                     const int other_pe,
+                                     uint32_t *const flag,
+                                     const uint64_t n_elems,
+                                     const uint64_t n_iterations) {
+    Meas meas{};
 
     // synchronize with other PE to make them start next test simultaneously
     nvshmem_barrier_all();
 
-    time.start = clock64();
+    meas.start = clock64();
 
     // send data in one go
     for (size_t it{0}; it < n_iterations; ++it) {
@@ -120,19 +143,19 @@ __device__ TimeMeas send_one_thread_once(uint8_t *const data,
     // make sure all send buffers are reusable
     nvshmem_quiet();
 
-    time.stop = clock64();
+    meas.stop = clock64();
 
-    return time;
+    return meas;
 }
 
-__device__ TimeMeas send_multi_thread_sep(uint8_t *const data,
-                                          const int other_pe,
-                                          uint32_t *const flag,
-                                          const uint32_t n_elems,
-                                          const uint32_t n_iterations) {
+__device__ void send_multi_thread_sep(uint8_t *const data,
+                                      const int other_pe,
+                                      uint32_t *const flag,
+                                      const uint64_t n_elems,
+                                      const uint64_t n_iterations,
+                                      Meas &meas) {
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
     const uint32_t thread_stride = blockDim.x * gridDim.y;
-    TimeMeas time{};
 
     // sync with other PE to make them start simultaneously
     if (thread_global_id == 0) {
@@ -140,7 +163,7 @@ __device__ TimeMeas send_multi_thread_sep(uint8_t *const data,
     }
 
     if (thread_global_id == 0) {
-        time.start = clock64();
+        meas.start = clock64();
     }
 
     // start for loop together
@@ -168,27 +191,26 @@ __device__ TimeMeas send_multi_thread_sep(uint8_t *const data,
     nvshmem_quiet();
 
     if (thread_global_id == 0) {
-        time.stop = clock64();
+        meas.stop = clock64();
     }
-
-    return time;
 }
 
-__device__ TimeMeas time_recv(uint8_t *const data,
-                              const int other_pe,
-                              volatile uint32_t *const flag,
-                              const uint32_t n_elems) {
-    TimeMeas time{};
+__device__ Meas time_recv(uint8_t *const data,
+                          const int other_pe,
+                          volatile uint32_t *const flag,
+                          const uint64_t n_elems,
+                          const uint64_t n_iterations) {
+    Meas meas{};
 
     // sync with other PE to make them start simultaneously
     nvshmem_barrier_all();
 
-    time.start = clock64();
+    meas.start = clock64();
 
     // wait until flag has been delivered, this then indicates all previous data has been delivered
     while (*flag == SendState::RUNNING);
 
-    time.stop = clock64();
+    meas.stop = clock64();
 
     // verify correctness
     for (size_t i{0}; i < n_elems; ++i) {
@@ -200,15 +222,16 @@ __device__ TimeMeas time_recv(uint8_t *const data,
     memset(data, 0, n_elems);
     *flag = SendState::RUNNING;
 
-    return time;
+    return meas;
 }
 
 
 __global__ void exchange_data(int this_pe,
                               uint8_t *const data,
                               uint32_t *const flag,
-                              const uint32_t n_elems,
-                              const uint32_t n_iterations) {
+                              const uint64_t n_elems,
+                              const uint64_t n_iterations,
+                              Meas *const meas_dev) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
     const uint32_t thread_stride = blockDim.x * gridDim.y;
@@ -226,23 +249,15 @@ __global__ void exchange_data(int this_pe,
         *flag = SendState::FINISHED;
 
         if (thread_global_id == 0) {
-            TimeMeas time = send_one_thread_sep(data, other_pe, flag, n_elems, n_iterations);
-            printf("send_one_thread_sep: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+            meas_dev[0] = send_one_thread_sep(data, other_pe, flag, n_elems, n_iterations);
         }
 
         if (thread_global_id == 0) {
-            TimeMeas time = send_one_thread_once(data, other_pe, flag, n_elems, n_iterations);
-            printf("send_one_thread_once: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
-                   n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+            meas_dev[1] = send_one_thread_once(data, other_pe, flag, n_elems, n_iterations);
         }
 
         {
-            TimeMeas time = send_multi_thread_sep(data, other_pe, flag, n_elems, n_iterations);
-            if (thread_global_id == 0) {
-                printf("send_multi_thread_sep: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
-                       n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
-            }
+            send_multi_thread_sep(data, other_pe, flag, n_elems, n_iterations, meas_dev[2]);
         }
 
     } else { // PE 1 is the receiver
@@ -250,17 +265,9 @@ __global__ void exchange_data(int this_pe,
         volatile uint32_t *flag_vol = flag;
 
         // receiver does not do anything but waiting, only needs one thread in all scenarios
-
-        constexpr size_t n_tests{3};
-        const char *test_names[] = {"recv(send_one_thread_sep)",
-                                    "recv(send_one_thread_once)",
-                                    "recv(send_multi_thread_sep"};
-
         if (thread_global_id == 0) {
-            for (size_t i{0}; i < n_tests; ++i) {
-                TimeMeas time = time_recv(data, other_pe, flag_vol, n_elems);
-                printf("%s: elems=%u, iterations=%u, start=%lld, stop=%lld time=%lld (%fms)\n",
-                       test_names[i], n_elems, n_iterations, time.start, time.stop, time.diff(), time.diff_ms());
+            for (size_t i{0}; i < N_TESTS; ++i) {
+                meas_dev[i] = time_recv(data, other_pe, flag_vol, n_elems, n_iterations);
             }
         }
     }
@@ -280,8 +287,8 @@ int main(int argc, char *argv[]) {
     cudaStream_t stream;
 
     assert(argc == 5);
-    const u_int32_t n_elems = stoi(argv[1]);
-    const u_int32_t n_iterations = stoi(argv[2]);
+    const u_int64_t n_elems = std::stoull(argv[1]);
+    const u_int64_t n_iterations = std::stoull(argv[2]);
     const u_int32_t grid_dim = stoi(argv[3]);
     const u_int32_t block_dim = stoi(argv[4]);
 
@@ -298,18 +305,49 @@ int main(int argc, char *argv[]) {
     auto *const data = static_cast<uint8_t *>(nvshmem_malloc(n_elems));
     auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
+    // memory for storing the measurements and returning them from device to host
+    Meas meas_host[N_TESTS];
+    Meas *meas_dev;
+    cudaMalloc(&meas_dev, sizeof(Meas) * N_TESTS);
+
     // call benchmarking kernel
     void *args[] = {&this_pe,
                     const_cast<uint8_t **>(&data),
                     const_cast<int **>(&flag),
-                    const_cast<uint32_t *>(&n_elems),
-                    const_cast<uint32_t *>(&n_iterations)};
+                    const_cast<uint64_t *>(&n_elems),
+                    const_cast<uint64_t *>(&n_iterations),
+                    &meas_dev};
     NVSHMEM_CHECK(
             nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
 
     // wait for kernel to finish
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    // copy results to host
+    cudaMemcpy(meas_host, meas_dev, sizeof(Meas) * N_TESTS, cudaMemcpyDeviceToHost);
+
+    // deallocate all the memory that has been alocated
+    cudaFree(meas_dev);
+    nvshmem_free(data);
+    nvshmem_free(flag);
+
+    std::array<std::string, N_TESTS> test_names;
+
+    // print results
+    if (this_pe == 0) { // sender
+        test_names = {"send_one_thread_sep",
+                      "send_one_thread_once",
+                      "send_multi_thread_sep"};
+    } else { // receiver
+        test_names = {"recv(send_one_thread_sep)",
+                      "recv(send_one_thread_once)",
+                      "recv(send_multi_thread_sep"};
+    }
+
+    for (size_t i{0}; i < N_TESTS; ++i) {
+        sleep(this_pe * N_TESTS + i);
+        std::cout << test_names[i] << ": " << meas_host[i].to_string(n_iterations * n_elems) << std::endl;
+    }
 
     // TODO: print results in suitable CSV format
 

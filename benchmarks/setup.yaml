@@ -1,0 +1,62 @@
+- name: Setup source
+  hosts: all
+  vars:
+    benchmarks:
+      - "01_put_coalescing"
+      - "02_shuffle"
+  tasks:
+    - name: Create project directory
+      file:
+        path: ~/nvshmem-db
+        state: directory
+
+    - name: Synchronize benchmarks
+      synchronize:
+        src: "{{ item }}"
+        dest: "~/nvshmem-db/benchmarks/"
+        recursive: true
+        delete: true
+      loop: "{{ benchmarks }}"
+
+    - name: Synchronize other directories
+      synchronize:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        recursive: true
+        delete: true
+      loop:
+        - src: "CMakeLists.txt"
+          dest: "~/nvshmem-db/benchmarks/"
+        - src: "hosts.txt"
+          dest: "~/nvshmem-db/benchmarks/"
+        - src: "../inc"
+          dest: "~/nvshmem-db/"
+        - src: "../src"
+          dest: "~/nvshmem-db/"
+        - src: "../docs"
+          dest: "~/nvshmem-db/"
+        - src: "../test"
+          dest: "~/nvshmem-db/"
+        - src: "../../CMakeLists.txt"
+          dest: "~/nvshmem-db/"
+
+    - name: Generate SSH key on master node
+      command: ssh-keygen -t rsa -f ~/.ssh/id_rsa -q -N ""
+      args:
+        creates: ~/.ssh/id_rsa
+      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+      run_once: true
+
+    - name: Fetch public key from master node
+      fetch:
+        src: ~/.ssh/id_rsa.pub
+        dest: /tmp/id_rsa.pub
+        flat: yes
+      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+      run_once: true
+
+    - name: Add public key to .ssh/authorized_keys on all nodes
+      authorized_key:
+        user: "{{ ansible_user }}"
+        state: present
+        key: "{{ lookup('file', '/tmp/id_rsa.pub') }}"

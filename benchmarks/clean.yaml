@@ -1,0 +1,8 @@
+- name: Clean remote - delete all project files on remote
+  hosts: all
+  tasks:
+    - name: Delete project files
+      file:
+        path: ~/nvshmem-db
+        state: absent
+        force: yes

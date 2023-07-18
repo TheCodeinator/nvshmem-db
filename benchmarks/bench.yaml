@@ -1,0 +1,13 @@
+- name: Run benchmarks
+  hosts: all
+  vars:
+    benchmarks:
+#      - "01_put_coalescing"
+      - "02_shuffle"
+  tasks:
+    - name: Run benchmark
+      shell: |
+        cd ~/nvshmem-db/benchmarks/{{ item }}
+        ./bench.sh
+      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+      loop: "{{ benchmarks }}"

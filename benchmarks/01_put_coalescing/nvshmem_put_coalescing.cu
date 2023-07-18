@@ -28,7 +28,7 @@
         }                                                                                  \
     } while (0)
 
-constexpr size_t N_ELEMS{64 * 1024 * 1024};
+constexpr size_t N_ELEMS{1024 * 1024};
 constexpr int TEST_1_SEND_DONE{1};
 constexpr int TEST_2_SEND_DONE{2};
 
@@ -53,7 +53,7 @@ __global__ void exchange_data(int this_pe,
         // sync with other PE to make them start simultaneously
         nvshmem_barrier_all();
 
-        clock_t start_time = clock();
+        long long start_time = clock64();
 
         // send data to other PE at same position
         for (size_t i{0}; i < N_ELEMS; ++i) {
@@ -72,17 +72,17 @@ __global__ void exchange_data(int this_pe,
         // make sure all send buffers are reusable
         nvshmem_quiet();
 
-        clock_t stop_time = clock();
-        int elapsed_time = static_cast<int>(stop_time - start_time);
+        long long stop_time = clock64();
+        long long elapsed_time = stop_time - start_time;
 
-        printf("Sender: time for sending %zu elems separately and calling nvshmem_quiet: %d\n", N_ELEMS, elapsed_time);
+        printf("Sender: time for sending %lu elems separately and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // TODO: return result in CSV format
 
         // synchronize with other PE to make them start next test simultaneously
         nvshmem_barrier_all();
 
-        start_time = clock();
+        start_time = clock64();
 
         // send data in one go
         nvshmem_uint8_put_nbi(data,
@@ -99,25 +99,24 @@ __global__ void exchange_data(int this_pe,
         // make sure all send buffers are reusable
         nvshmem_quiet();
 
-        stop_time = clock();
-        elapsed_time = static_cast<int>(stop_time - start_time);
+        stop_time = clock64();
+        elapsed_time = stop_time - start_time;
 
-        printf("Sender: time for sending %zu elems at once and calling nvshmem_quiet: %d\n", N_ELEMS, elapsed_time);
+        printf("Sender: time for sending %lu elems at once and calling nvshmem_quiet: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
     } else { // PE 1 is the receiver
         // sync with other PE to make them start simultaneously
         nvshmem_barrier_all();
 
-        clock_t start_time = clock();
+        long long start_time = clock64();
 
         // wait until flag has been delivered, this then indicates all previous data has been delivered
-        // TODO: check if this call is correct (might use nvshmem_int_wait)
         nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_1_SEND_DONE);
 
-        clock_t stop_time = clock();
-        int elapsed_time = static_cast<int>(stop_time - start_time);
+        long long stop_time = clock64();
+        auto elapsed_time = stop_time - start_time;
 
-        printf("Receiver: time until all %zu elems have been received separately: %d", N_ELEMS, elapsed_time);
+        printf("Receiver: time until all %lu elems have been received separately: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // verify correctness
         for (size_t i{0}; i < N_ELEMS; ++i) {
@@ -133,16 +132,15 @@ __global__ void exchange_data(int this_pe,
         // synchronize with other PE to make them start next test simultaneously
         nvshmem_barrier_all();
 
-        start_time = clock();
+        start_time = clock64();
 
         // wait until flag has been delivered, this then indicates all previous data has been delivered
-        // TODO: check if this call is correct (might use nvshmem_int_wait)
         nvshmemi_wait_until(flag, NVSHMEM_CMP_EQ, TEST_2_SEND_DONE);
 
-        stop_time = clock();
-        elapsed_time = static_cast<int>(stop_time - start_time);
+        stop_time = clock64();
+        elapsed_time = stop_time - start_time;
 
-        printf("Receiver: time until all %zu elems have been received at once: %d", N_ELEMS, elapsed_time);
+        printf("Receiver: time until all %lu elems have been received at once: %lld (clock start %lld, clock stop %lld)\n", N_ELEMS, elapsed_time, start_time, stop_time);
 
         // verify correctness
         for (size_t i{0}; i < N_ELEMS; ++i) {
@@ -163,6 +161,7 @@ int main(int argc, char *argv[]) {
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
     n_pes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
+    printf("Hello from PE %d of %d\n", this_pe, n_pes);
     cudaSetDevice(this_pe);
     cudaStreamCreate(&stream);
 

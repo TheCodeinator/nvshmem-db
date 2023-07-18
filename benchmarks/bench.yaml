@@ -3,7 +3,8 @@
   vars:
     benchmarks:
 #      - "01_put_coalescing"
-      - "02_shuffle"
+       - "02_shuffle"
+       - "03_single_multi_launch"
   tasks:
     - name: Run benchmark
       shell: |

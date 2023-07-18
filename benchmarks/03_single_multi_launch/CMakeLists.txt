@@ -1,0 +1,4 @@
+add_executable(bench_03_single_multi_launch single_multi_launch.cu)
+add_dependencies(bench_03_single_multi_launch nvshmem-db baseline-db)
+target_link_libraries(bench_03_single_multi_launch nvshmem-db baseline-db)
+set_property(TARGET bench_0e_shuffle PROPERTY POSITION_INDEPENDENT_CODE ON)

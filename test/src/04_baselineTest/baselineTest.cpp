@@ -1,5 +1,5 @@
 #include <iostream>
-#include "BaselineShuffle.h"
+#include "baseline_shuffle.h"
 
 
 struct shuffle_tuple {
@@ -18,7 +18,7 @@ int main(){
 
 
 
-    const ShuffleResult result = shuffle(,sizeof(shuffle_tuple),);
+    //const ShuffleResult result = shuffle(,sizeof(shuffle_tuple),);
 
 
     return EXIT_SUCCESS;

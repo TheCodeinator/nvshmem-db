@@ -1,4 +1,4 @@
-- name: Run benchmarks
+u- name: Run benchmarks
   hosts: all
   tasks:
     - name: Compile nvshmem-db # TODO: Detect if already up-to-date

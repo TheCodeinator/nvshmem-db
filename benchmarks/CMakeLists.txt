@@ -1,2 +1,3 @@
 add_subdirectory(01_put_coalescing)
 add_subdirectory(02_shuffle)
+add_subdirectory(03_single_multi_launch)

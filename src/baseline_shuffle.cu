@@ -1,4 +1,4 @@
-#include "BaselineShuffle.h"
+#include "baseline_shuffle.h"
 
 // used to check the status code of cuda routines for errors
 #undef CUDA_CHECK
@@ -151,8 +151,8 @@ ShuffleResult shuffle(
     size_t globalHistogramsSize = n_pes * n_pes * sizeof(uint32_t);
 
 
-    printf("PE %d: shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,
-           keyOffset);
+    //printf("PE %d: shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,
+    //       keyOffset);
 
     uint32_t * d_global_histograms;
     CUDA_CHECK(cudaMalloc(&d_global_histograms, globalHistogramsSize));

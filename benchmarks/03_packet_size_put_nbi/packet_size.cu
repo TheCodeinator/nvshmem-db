@@ -202,6 +202,8 @@ __global__ void exchange_data(int this_pe,
     }
 }
 
+// TODO: use host to measure time since GPU clock frq. can change dynamically and is therefore not reliable
+
 /**
  * cmd arguments:
  * 0) program name (implicit)

@@ -31,8 +31,7 @@
 
 
 constexpr long long SHADER_FREQ_KHZ{1530000};
-constexpr long long SHADER_FREQ_HZ{1530};
-constexpr long long MAX_SEND_SIZE{1024 * 1024};
+constexpr long long MAX_SEND_SIZE{1024 * 1024 * 16};
 
 struct Meas {
     long long start = 0;
@@ -47,7 +46,7 @@ struct Meas {
     }
 
     __host__  [[nodiscard]] long double time_diff_s() const {
-        return static_cast<long double>(this->clock_diff()) / SHADER_FREQ_HZ;
+        return static_cast<long double>(this->time_diff_ms() / 1000);
     }
 
     __host__ [[nodiscard]] long double get_throughput(const uint64_t n_bytes) const {

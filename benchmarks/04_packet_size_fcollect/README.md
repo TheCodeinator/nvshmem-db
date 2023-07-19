@@ -1,0 +1,1 @@
+Similar to benchmark 03 but using fcollect

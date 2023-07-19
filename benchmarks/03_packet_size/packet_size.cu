@@ -32,7 +32,7 @@
 
 constexpr long long SHADER_FREQ_KHZ{1530000};
 constexpr long long SHADER_FREQ_HZ{1530};
-constexpr long long INFINIBAND_MAX_PACK_SIZE{1024 * 4};
+constexpr long long MAX_SEND_SIZE{1024 * 1024};
 
 struct Meas {
     long long start = 0;
@@ -76,7 +76,7 @@ consteval size_t log2const(size_t n) {
 // TODO: print in csv format
 
 // from 2 go up to the max packet size in exponential steps
-constexpr size_t N_TESTS{log2const(INFINIBAND_MAX_PACK_SIZE) + 1};
+constexpr size_t N_TESTS{log2const(MAX_SEND_SIZE) + 1};
 
 enum SendState {
     RUNNING = 0,
@@ -152,7 +152,7 @@ __device__ Meas time_recv(uint8_t *const data,
     assert(*data == 1);
 
     // reset receive buffer and flag for next test
-    memset(data, 0, INFINIBAND_MAX_PACK_SIZE);
+    memset(data, 0, MAX_SEND_SIZE);
     *flag = SendState::RUNNING;
 
     return meas;
@@ -175,7 +175,7 @@ __global__ void exchange_data(int this_pe,
     // PE 0 is the sender
     if (this_pe == 0) {
         // populate data to send to PE 1
-        for (size_t i{thread_global_id}; i < (INFINIBAND_MAX_PACK_SIZE * gridDim.x * blockDim.x); i += thread_stride) {
+        for (size_t i{thread_global_id}; i < (MAX_SEND_SIZE * gridDim.x * blockDim.x); i += thread_stride) {
             // just write all ones
             data[i] = static_cast<uint8_t>(1);
         }
@@ -230,7 +230,7 @@ int main(int argc, char *argv[]) {
     assert(n_pes == 2);
 
     // allocate symmetric device memory for sending/receiving the data
-    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(INFINIBAND_MAX_PACK_SIZE * block_dim * grid_dim));
+    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * block_dim * grid_dim));
     auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
     // memory for storing the measurements and returning them from device to host

@@ -317,8 +317,7 @@ int main(int argc, char *argv[]) {
                     const_cast<uint64_t *>(&n_elems),
                     const_cast<uint64_t *>(&n_iterations),
                     &meas_dev};
-    NVSHMEM_CHECK(
-            nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
+    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
 
     // wait for kernel to finish
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -326,12 +325,12 @@ int main(int argc, char *argv[]) {
     // copy results to host
     cudaMemcpy(meas_host, meas_dev, sizeof(Meas) * N_TESTS, cudaMemcpyDeviceToHost);
 
-    // deallocate all the memory that has been alocated
+    // deallocate all the memory that has been allocated
     cudaFree(meas_dev);
     nvshmem_free(data);
     nvshmem_free(flag);
 
-    std::array<std::string, N_TESTS> test_names;
+    std::array <std::string, N_TESTS> test_names;
 
     // print results
     if (this_pe == 0) { // sender
@@ -344,16 +343,12 @@ int main(int argc, char *argv[]) {
                       "recv(send_multi_thread_sep"};
     }
 
+    std::string result_string = "put_coalescing," + std::to_string(n_pes) + "," + std::to_string(n_elems) + ","
+                                + std::to_string(n_iterations) + "," + std::to_string(grid_dim) + "," + std::to_string(block_dim);
+
     for (size_t i{0}; i < N_TESTS; ++i) {
         sleep(this_pe * N_TESTS + i);
-        std::cout << test_names[i] << ": " << meas_host[i].to_string(n_iterations * n_elems) << std::endl;
+        result_string += "," + meas_host[i].get_throughput(n_iterations * n_elems);
     }
-
-    // TODO: print results in suitable CSV format
-
-//    std::ofstream outfile;
-//    outfile.open("results.csv");
-//    outfile << "type, node_count,in n,out n" << std::endl;
-//
-//    outfile.close();
+    std::cout << result_string << std::endl;
 }

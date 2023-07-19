@@ -1,13 +1,18 @@
 - name: Run benchmarks
-  hosts: all
+  hosts: c01.lab.dm.informatik.tu-darmstadt.de
   vars:
     benchmarks:
-#      - "01_put_coalescing"
-      - "02_shuffle"
+      - "01_put_coalescing"
+#      - "02_shuffle"
   tasks:
     - name: Run benchmark
       shell: |
         cd ~/nvshmem-db/benchmarks/{{ item }}
         ./bench.sh
-      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+      register: shell_output
       loop: "{{ benchmarks }}"
+
+    - name: Print shell output line by line
+      debug:
+        msg: "{{ item }}"
+      loop: "{{ shell_output.results | map(attribute='stdout_lines') | list }}"

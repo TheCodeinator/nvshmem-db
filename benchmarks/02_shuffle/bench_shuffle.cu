@@ -90,9 +90,9 @@ int main(int argc, char *argv[]) {
     thisPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
     cudaStreamCreate(&stream);
 
-    std::ofstream outfile;
     std::string arg(argv[1]);
     std::string filename = "shuffle_" + arg + ".csv";
+    std::ofstream outfile;
     outfile.open(filename.c_str());
 
     outfile << "table_size, time" << std::endl;

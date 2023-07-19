@@ -7,4 +7,6 @@ same data in one go.
 
 ## CSV Layout
 
-TODO: describe layout here 
+type,node_count,in n,out n
+put_coalescing,node_count,in_num_elements,in_num_iteration,in_num_grids,in_num_blocks,out_throughput_one_thread_once,out_throughput_one_thread_sep,out_throughput_multi_thread_sep
+

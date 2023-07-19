@@ -1,0 +1,15 @@
+- name: Run benchmarks
+  hosts: all
+  tasks:
+    - name: Compile nvshmem-db # TODO: Detect if already up-to-date
+      shell: |
+        cd ~/nvshmem-db
+
+        ~/cmake-3.25.3-linux-x86_64/bin/cmake . \
+          -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12/bin/nvcc \
+          -DNVSHMEM_PREFIX=/opt/nvshmem/ \
+          -DMPI_HOME=/usr/hpcx/ompi \
+          -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-11 \
+          -DCMAKE_BUILD_TYPE=Debug
+
+        make

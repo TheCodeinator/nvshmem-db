@@ -32,6 +32,7 @@
 
 constexpr long long SHADER_FREQ_KHZ{1530000};
 constexpr long long SHADER_FREQ_HZ{1530};
+constexpr long long INFINIBAND_MAX_PACK_SIZE{1024 * 4};
 
 struct Meas {
     long long start = 0;
@@ -67,93 +68,28 @@ struct Meas {
     }
 };
 
-// TODO: verify results make sense
-// TODO: return results to CPU and print in csv format
+consteval size_t log2const(size_t n) {
+    return n == 1 ? 0 : 1 + log2const(n >> 1);
+}
 
-constexpr size_t N_TESTS{3};
+// TODO: verify results make sense and benchmark code is bug-free
+// TODO: print in csv format
+
+// from 2 go up to the max packet size in exponential steps
+constexpr size_t N_TESTS{log2const(INFINIBAND_MAX_PACK_SIZE) + 1};
 
 enum SendState {
     RUNNING = 0,
     FINISHED = 1,
 };
 
-__device__ Meas send_one_thread_sep(uint8_t *const data,
-                                    const int other_pe,
-                                    uint32_t *const flag,
-                                    const uint64_t n_elems,
-                                    const uint64_t n_iterations) {
-    Meas meas{};
+__device__ Meas time_send(uint8_t *const data,
+                          const int other_pe,
+                          uint32_t *const flag,
+                          const uint64_t n_iterations,
+                          const size_t msg_size,
+                          Meas &meas) {
 
-    // sync with other PE to make them start simultaneously
-    nvshmem_barrier_all();
-
-    meas.start = clock64();
-
-    // send data to other PE at same position
-    for (size_t it{0}; it < n_iterations; ++it) {
-        for (size_t i{0}; i < n_elems; ++i) {
-            nvshmem_uint8_put_nbi(data + i,
-                                  data + i,
-                                  1,
-                                  other_pe);
-        }
-    }
-
-    // let following mem operations be executed after the previous sending
-    nvshmem_fence();
-
-    // set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
-    nvshmem_uint32_put_nbi(flag, flag, 1, other_pe); // send flag
-
-    // make sure all send buffers are reusable
-    nvshmem_quiet();
-
-    meas.stop = clock64();
-
-    return meas;
-}
-
-
-__device__ Meas send_one_thread_once(uint8_t *const data,
-                                     const int other_pe,
-                                     uint32_t *const flag,
-                                     const uint64_t n_elems,
-                                     const uint64_t n_iterations) {
-    Meas meas{};
-
-    // synchronize with other PE to make them start next test simultaneously
-    nvshmem_barrier_all();
-
-    meas.start = clock64();
-
-    // send data in one go
-    for (size_t it{0}; it < n_iterations; ++it) {
-        nvshmem_uint8_put_nbi(data,
-                              data,
-                              n_elems,
-                              other_pe);
-    }
-
-    // let following mem operations be executed after the previous sending
-    nvshmem_fence();
-
-    // set memory flag at other PE to signal that all previous send operation must have been completed (see fence)
-    nvshmem_uint32_put_nbi(flag, flag, 1, other_pe);
-
-    // make sure all send buffers are reusable
-    nvshmem_quiet();
-
-    meas.stop = clock64();
-
-    return meas;
-}
-
-__device__ void send_multi_thread_sep(uint8_t *const data,
-                                      const int other_pe,
-                                      uint32_t *const flag,
-                                      const uint64_t n_elems,
-                                      const uint64_t n_iterations,
-                                      Meas &meas) {
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
     const uint32_t thread_stride = blockDim.x * gridDim.y;
 
@@ -169,15 +105,16 @@ __device__ void send_multi_thread_sep(uint8_t *const data,
     // start for loop together
     __syncthreads();
 
-    // send data to other PE at same position
+
+    // send same data for specified number of iterations
     for (size_t it{0}; it < n_iterations; ++it) {
-        for (size_t i{thread_global_id}; i < n_elems; i += thread_stride) {
-            nvshmem_uint8_put_nbi(data + i,
-                                  data + i,
-                                  1,
-                                  other_pe);
-        }
+        nvshmem_uint8_put_nbi(
+                data + thread_global_id, // use specific offset for each thread to not run into any data race conflicts
+                data + thread_global_id,
+                msg_size,
+                other_pe);
     }
+
 
     // let following mem operations be executed after the previous sending
     nvshmem_fence();
@@ -198,7 +135,6 @@ __device__ void send_multi_thread_sep(uint8_t *const data,
 __device__ Meas time_recv(uint8_t *const data,
                           const int other_pe,
                           volatile uint32_t *const flag,
-                          const uint64_t n_elems,
                           const uint64_t n_iterations) {
     Meas meas{};
 
@@ -212,24 +148,24 @@ __device__ Meas time_recv(uint8_t *const data,
 
     meas.stop = clock64();
 
-    // verify correctness
-    for (size_t i{0}; i < n_elems; ++i) {
-        // write lower bits of index to every element
-        assert(data[i] == static_cast<uint8_t>(i));
-    }
+    // sanity check: has received the data from the sender at least once
+    assert(*data == 1);
 
     // reset receive buffer and flag for next test
-    memset(data, 0, n_elems);
+    memset(data, 0, INFINIBAND_MAX_PACK_SIZE);
     *flag = SendState::RUNNING;
 
     return meas;
 }
 
+// list of message sizes to test
+// send with nbi pu tin loop with configurable iterations
+// nvshmem_quiet afterwards
+// record time for each message size
 
 __global__ void exchange_data(int this_pe,
                               uint8_t *const data,
                               uint32_t *const flag,
-                              const uint64_t n_elems,
                               const uint64_t n_iterations,
                               Meas *const meas_dev) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
@@ -239,25 +175,19 @@ __global__ void exchange_data(int this_pe,
     // PE 0 is the sender
     if (this_pe == 0) {
         // populate data to send to PE 1
-        for (size_t i{thread_global_id}; i < n_elems; i += thread_stride) {
-            // write lower bits of index to every element
-            data[i] = static_cast<uint8_t>(i);
+        for (size_t i{thread_global_id}; i < (INFINIBAND_MAX_PACK_SIZE * gridDim.x * blockDim.x); i += thread_stride) {
+            // just write all ones
+            data[i] = static_cast<uint8_t>(1);
         }
+        __syncthreads();
 
         // set local flag to finished state on this PE, send flag every time the sender is finished
         // Receiver will reset its local instance of the flag after each of the tests
         *flag = SendState::FINISHED;
 
-        if (thread_global_id == 0) {
-            meas_dev[0] = send_one_thread_sep(data, other_pe, flag, n_elems, n_iterations);
-        }
-
-        if (thread_global_id == 0) {
-            meas_dev[1] = send_one_thread_once(data, other_pe, flag, n_elems, n_iterations);
-        }
-
-        {
-            send_multi_thread_sep(data, other_pe, flag, n_elems, n_iterations, meas_dev[2]);
+        // send msgs with exponentially increasing sizes starting from 2 and going to max infiniband packet size
+        for (size_t test{0}; test < N_TESTS; ++test) {
+            time_send(data, other_pe, flag, n_iterations, pow(2, test), meas_dev[test]);
         }
 
     } else { // PE 1 is the receiver
@@ -267,7 +197,7 @@ __global__ void exchange_data(int this_pe,
         // receiver does not do anything but waiting, only needs one thread in all scenarios
         if (thread_global_id == 0) {
             for (size_t i{0}; i < N_TESTS; ++i) {
-                meas_dev[i] = time_recv(data, other_pe, flag_vol, n_elems, n_iterations);
+                meas_dev[i] = time_recv(data, other_pe, flag_vol, n_iterations);
             }
         }
     }
@@ -276,21 +206,19 @@ __global__ void exchange_data(int this_pe,
 /**
  * cmd arguments:
  * 0) program name (implicit)
- * 1) number of elements
- * 2) number of iterations
- * 3) grid dims
- * 4) block dims
+ * 1) number of iterations
+ * 2) grid dims
+ * 3) block dims
  */
 int main(int argc, char *argv[]) {
     // init nvshmem
     int n_pes, this_pe;
     cudaStream_t stream;
 
-    assert(argc == 5);
-    const u_int64_t n_elems = std::stoull(argv[1]);
-    const u_int64_t n_iterations = std::stoull(argv[2]);
-    const u_int32_t grid_dim = stoi(argv[3]);
-    const u_int32_t block_dim = stoi(argv[4]);
+    assert(argc == 4);
+    const u_int64_t n_iterations = std::stoull(argv[1]);
+    const u_int32_t grid_dim = stoi(argv[2]);
+    const u_int32_t block_dim = stoi(argv[3]);
 
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
@@ -302,7 +230,7 @@ int main(int argc, char *argv[]) {
     assert(n_pes == 2);
 
     // allocate symmetric device memory for sending/receiving the data
-    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(n_elems));
+    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(INFINIBAND_MAX_PACK_SIZE * block_dim * grid_dim));
     auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
     // memory for storing the measurements and returning them from device to host
@@ -314,7 +242,6 @@ int main(int argc, char *argv[]) {
     void *args[] = {&this_pe,
                     const_cast<uint8_t **>(&data),
                     const_cast<int **>(&flag),
-                    const_cast<uint64_t *>(&n_elems),
                     const_cast<uint64_t *>(&n_iterations),
                     &meas_dev};
     NVSHMEM_CHECK(
@@ -331,22 +258,11 @@ int main(int argc, char *argv[]) {
     nvshmem_free(data);
     nvshmem_free(flag);
 
-    std::array<std::string, N_TESTS> test_names;
-
-    // print results
-    if (this_pe == 0) { // sender
-        test_names = {"send_one_thread_sep",
-                      "send_one_thread_once",
-                      "send_multi_thread_sep"};
-    } else { // receiver
-        test_names = {"recv(send_one_thread_sep)",
-                      "recv(send_one_thread_once)",
-                      "recv(send_multi_thread_sep"};
-    }
-
     for (size_t i{0}; i < N_TESTS; ++i) {
         usleep(this_pe * N_TESTS + i * 100);
-        std::cout << test_names[i] << ": " << meas_host[i].to_string(n_iterations * n_elems) << std::endl;
+        // have send 2^i bytes in each iteation
+        std::cout << (this_pe == 0 ? "send" : "receive") << "_" << i  << "(" << pow(2, i) << "B)" << ": "
+                  << meas_host[i].to_string(n_iterations * pow(2, i)) << std::endl;
     }
 
     // TODO: print results in suitable CSV format

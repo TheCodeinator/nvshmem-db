@@ -345,7 +345,7 @@ int main(int argc, char *argv[]) {
     }
 
     for (size_t i{0}; i < N_TESTS; ++i) {
-        sleep(this_pe * N_TESTS + i);
+        usleep(this_pe * N_TESTS + i * 100);
         std::cout << test_names[i] << ": " << meas_host[i].to_string(n_iterations * n_elems) << std::endl;
     }
 

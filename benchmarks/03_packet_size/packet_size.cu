@@ -87,8 +87,8 @@ __device__ Meas time_send(uint8_t *const data,
                           const int other_pe,
                           uint32_t *const flag,
                           const uint64_t n_iterations,
-                          const size_t msg_size) {
-    Meas meas{};
+                          const size_t msg_size,
+                          Meas &meas) {
 
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
     const uint32_t thread_stride = blockDim.x * gridDim.y;
@@ -179,6 +179,7 @@ __global__ void exchange_data(int this_pe,
             // just write all ones
             data[i] = static_cast<uint8_t>(1);
         }
+        __syncthreads();
 
         // set local flag to finished state on this PE, send flag every time the sender is finished
         // Receiver will reset its local instance of the flag after each of the tests
@@ -186,7 +187,7 @@ __global__ void exchange_data(int this_pe,
 
         // send msgs with exponentially increasing sizes starting from 2 and going to max infiniband packet size
         for (size_t test{0}; test < N_TESTS; ++test) {
-            meas_dev[test] = time_send(data, other_pe, flag, n_iterations, pow(2, test));
+            time_send(data, other_pe, flag, n_iterations, pow(2, test), meas_dev[test]);
         }
 
     } else { // PE 1 is the receiver

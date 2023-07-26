@@ -343,12 +343,8 @@ int main(int argc, char *argv[]) {
                       "recv(send_multi_thread_sep"};
     }
 
-    std::string result_string = "put_coalescing," + std::to_string(n_pes) + "," + std::to_string(n_elems) + ","
-                                + std::to_string(n_iterations) + "," + std::to_string(grid_dim) + "," + std::to_string(block_dim);
-
     for (size_t i{0}; i < N_TESTS; ++i) {
-        sleep(this_pe * N_TESTS + i);
-        result_string += "," + meas_host[i].get_throughput(n_iterations * n_elems);
+        std::cout << "," << meas_host[i].get_throughput(n_iterations * n_elems);
     }
-    std::cout << result_string << std::endl;
+    std::cout << std::endl;
 }

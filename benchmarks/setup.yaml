@@ -4,6 +4,7 @@
     benchmarks:
       - "01_put_coalescing"
       - "02_shuffle"
+      - "03_packet_size"
   tasks:
     - name: Create project directory
       file:

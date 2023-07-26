@@ -30,8 +30,8 @@
     } while (0)
 
 
-constexpr long long SHADER_FREQ_KHZ{1530000};
-constexpr long long SHADER_FREQ_HZ{1530};
+constexpr long long SHADER_FREQ_KHZ{1530};
+constexpr long long SHADER_FREQ_HZ{1530000};
 
 struct Meas {
     long long start = 0;
@@ -317,7 +317,8 @@ int main(int argc, char *argv[]) {
                     const_cast<uint64_t *>(&n_elems),
                     const_cast<uint64_t *>(&n_iterations),
                     &meas_dev};
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
+    NVSHMEM_CHECK(
+            nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
 
     // wait for kernel to finish
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -330,7 +331,7 @@ int main(int argc, char *argv[]) {
     nvshmem_free(data);
     nvshmem_free(flag);
 
-    std::array <std::string, N_TESTS> test_names;
+    std::array<std::string, N_TESTS> test_names;
 
     // print results
     if (this_pe == 0) { // sender
@@ -343,8 +344,10 @@ int main(int argc, char *argv[]) {
                       "recv(send_multi_thread_sep"};
     }
 
-    for (size_t i{0}; i < N_TESTS; ++i) {
-        std::cout << "," << meas_host[i].get_throughput(n_iterations * n_elems);
+    if (this_pe == 0) {
+        for (size_t i{0}; i < N_TESTS; ++i) {
+            std::cout << "," << meas_host[i].get_throughput(n_iterations * n_elems);
+        }
+        std::cout << std::endl;
     }
-    std::cout << std::endl;
 }

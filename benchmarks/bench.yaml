@@ -16,3 +16,10 @@
       debug:
         msg: "{{ item }}"
       loop: "{{ shell_output.results | map(attribute='stdout_lines') | list }}"
+
+    - name: Collect results from node
+      fetch:
+        src: "~/nvshmem-db/benchmarks/{{ item }}/results.csv"
+        dest: "tools/results/{{ item }}.csv"
+        flat: yes
+      loop: "{{ benchmarks }}"

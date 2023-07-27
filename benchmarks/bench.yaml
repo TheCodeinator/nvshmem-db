@@ -5,10 +5,17 @@
       - "01_put_coalescing"
 #      - "02_shuffle"
   tasks:
+    - name: Synchronize benchmark scripts
+      synchronize:
+        src: "{{ item }}/run.sh"
+        dest: "~/nvshmem-db/benchmarks/{{ item }}/run.sh"
+        delete: true
+      loop: "{{ benchmarks }}"
+
     - name: Run benchmark
       shell: |
         cd ~/nvshmem-db/benchmarks/{{ item }}
-        ./bench.sh
+        ./run.sh
       register: shell_output
       loop: "{{ benchmarks }}"
 

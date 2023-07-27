@@ -1,9 +1,8 @@
 #!/bin/bash
 
-#elements_list=(100 200 400 800 1600 3200 6400 12800 25600 51200 102400 204800 409600)
-elements_list=(100 200)
-grids_list=(1 2 4 8 16 32 64)
-blocks_list=(1 2 4 8 16 32 64)
+elements_list=(100 800 6400 51200 409600 3276800)
+grids_list=(1 8 64)
+blocks_list=(1 8 64)
 
 output_file="results.csv"
 rm -f $output_file

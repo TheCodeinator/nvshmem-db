@@ -30,8 +30,8 @@
     } while (0)
 
 
-constexpr long long SHADER_FREQ_KHZ{1530000};
-constexpr long long SHADER_FREQ_HZ{1530};
+constexpr long long SHADER_FREQ_KHZ{1530};
+constexpr long long SHADER_FREQ_HZ{1530000};
 
 struct Meas {
     long long start = 0;

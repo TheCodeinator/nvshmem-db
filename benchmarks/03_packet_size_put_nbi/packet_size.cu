@@ -153,16 +153,18 @@ __global__ void exchange_data(int this_pe,
  * 1) number of iterations
  * 2) grid dims
  * 3) block dims
+ * 4) number of hosts
  */
 int main(int argc, char *argv[]) {
     // init nvshmem
     int n_pes, this_pe;
     cudaStream_t stream;
 
-    assert(argc == 4);
+    assert(argc == 5);
     const u_int64_t n_iterations = std::stoull(argv[1]);
     const u_int32_t grid_dim = stoi(argv[2]);
     const u_int32_t block_dim = stoi(argv[3]);
+    const u_int32_t n_hosts = stoi(argv[4]);
 
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
@@ -197,23 +199,21 @@ int main(int argc, char *argv[]) {
     // copy results to host
     cudaMemcpy(meas_host, meas_dev, sizeof(Meas) * N_TESTS, cudaMemcpyDeviceToHost);
 
-    // deallocate all the memory that has been alocated
+    // deallocate all the memory that has been allocated
     cudaFree(meas_dev);
     nvshmem_free(data);
     nvshmem_free(flag);
 
-    for (size_t i{0}; i < N_TESTS; ++i) {
-        usleep(this_pe * N_TESTS + i * 100);
-        // have send 2^i bytes in each iteation
-        std::cout << (this_pe == 0 ? "send" : "receive") << "_" << i  << "(" << pow(2, i) << "B)" << ": "
-                  << meas_host[i].to_string(n_iterations * pow(2, i)) << std::endl;
+    if (this_pe == 0) {
+        for (size_t i{0}; i < N_TESTS; ++i) {
+            // send 2^i bytes in each iteration
+            const auto n_bytes = pow(2, i);
+            std::cout << "03_packet_size_put_nbi," << n_hosts
+                      << "," << n_bytes
+                      << "," << n_iterations
+                      << "," << grid_dim
+                      << "," << block_dim
+                      << "," << meas_host[i].get_throughput(n_iterations * n_bytes) * grid_dim * block_dim << std::endl;
+        }
     }
-
-    // TODO: print results in suitable CSV format
-
-//    std::ofstream outfile;
-//    outfile.open("results.csv");
-//    outfile << "type, node_count,in n,out n" << std::endl;
-//
-//    outfile.close();
 }

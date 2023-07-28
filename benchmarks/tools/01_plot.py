@@ -26,10 +26,11 @@ for node_count in node_counts:
     for i, grid_size in enumerate(grid_sizes):
         for j, block_size in enumerate(block_sizes):
             ax = axs[i, j]
+            ax.set_xscale('log')  # set x-axis to logarithmic scale
 
             # subset dataframe by current node count, grid and block sizes
             df_subset = df[(df['node_count'] == node_count) & (df['in_num_grids'] == grid_size) & (
-                        df['in_num_blocks'] == block_size)]
+                    df['in_num_blocks'] == block_size)]
 
             # plot with single color for all elements in this subplot
             df_subset.set_index('in_num_elements')['out_throughput_one_thread_sep'].plot(ax=ax, marker='o', color='b',

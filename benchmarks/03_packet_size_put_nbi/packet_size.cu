@@ -5,6 +5,7 @@
 #include <cuda.h>
 #include <c++/10/array>
 #include "nvshmem.h"
+#include "Meas.cuh"
 
 // used to check the status code of cuda routines for errors
 #undef CUDA_CHECK
@@ -30,43 +31,9 @@
     } while (0)
 
 
-constexpr long long SHADER_FREQ_KHZ{1530000};
-constexpr long long SHADER_FREQ_HZ{1530};
-constexpr long long INFINIBAND_MAX_PACK_SIZE{1024 * 4};
+constexpr long long MAX_SEND_SIZE{1024 * 1024 * 16};
 
-struct Meas {
-    long long start = 0;
-    long long stop = 0;
 
-    __host__  [[nodiscard]] inline long long clock_diff() const {
-        return stop - start;
-    }
-
-    __host__  [[nodiscard]] long double time_diff_ms() const {
-        return static_cast<long double>(this->clock_diff()) / SHADER_FREQ_KHZ;
-    }
-
-    __host__  [[nodiscard]] long double time_diff_s() const {
-        return static_cast<long double>(this->clock_diff()) / SHADER_FREQ_HZ;
-    }
-
-    __host__ [[nodiscard]] long double get_throughput(const uint64_t n_bytes) const {
-        return n_bytes / this->time_diff_s() / 1000000;
-    }
-
-    __host__ [[nodiscard]] std::string to_csv() const {
-        // TODO: @Alex If you want, use this to implement printing to csv format
-        return {};
-    }
-
-    __host__ std::string to_string(const uint64_t n_bytes) const {
-        return "start=" + std::to_string(start) +
-               " stop=" + std::to_string(stop) +
-               " clock_diff=" + std::to_string(this->clock_diff()) +
-               " (" + std::to_string(this->time_diff_ms()) +
-               "ms) throughput=" + std::to_string(this->get_throughput(n_bytes)) + " GB/s";
-    }
-};
 
 consteval size_t log2const(size_t n) {
     return n == 1 ? 0 : 1 + log2const(n >> 1);
@@ -76,7 +43,7 @@ consteval size_t log2const(size_t n) {
 // TODO: print in csv format
 
 // from 2 go up to the max packet size in exponential steps
-constexpr size_t N_TESTS{log2const(INFINIBAND_MAX_PACK_SIZE) + 1};
+constexpr size_t N_TESTS{log2const(MAX_SEND_SIZE) + 1};
 
 enum SendState {
     RUNNING = 0,
@@ -152,7 +119,7 @@ __device__ Meas time_recv(uint8_t *const data,
     assert(*data == 1);
 
     // reset receive buffer and flag for next test
-    memset(data, 0, INFINIBAND_MAX_PACK_SIZE);
+    memset(data, 0, MAX_SEND_SIZE);
     *flag = SendState::RUNNING;
 
     return meas;
@@ -175,7 +142,7 @@ __global__ void exchange_data(int this_pe,
     // PE 0 is the sender
     if (this_pe == 0) {
         // populate data to send to PE 1
-        for (size_t i{thread_global_id}; i < (INFINIBAND_MAX_PACK_SIZE * gridDim.x * blockDim.x); i += thread_stride) {
+        for (size_t i{thread_global_id}; i < (MAX_SEND_SIZE * gridDim.x * blockDim.x); i += thread_stride) {
             // just write all ones
             data[i] = static_cast<uint8_t>(1);
         }
@@ -202,6 +169,8 @@ __global__ void exchange_data(int this_pe,
         }
     }
 }
+
+// TODO: use host to measure time since GPU clock frq. can change dynamically and is therefore not reliable
 
 /**
  * cmd arguments:
@@ -230,7 +199,7 @@ int main(int argc, char *argv[]) {
     assert(n_pes == 2);
 
     // allocate symmetric device memory for sending/receiving the data
-    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(INFINIBAND_MAX_PACK_SIZE * block_dim * grid_dim));
+    auto *const data = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * block_dim * grid_dim));
     auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
     // memory for storing the measurements and returning them from device to host

@@ -1,3 +1,6 @@
+include_directories(utils)
+
 add_subdirectory(01_put_coalescing)
 add_subdirectory(02_shuffle)
-add_subdirectory(03_packet_size)
+add_subdirectory(03_packet_size_put_nbi)
+add_subdirectory(04_packet_size_fcollect)

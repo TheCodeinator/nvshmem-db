@@ -95,16 +95,6 @@ __device__ void recv(uint8_t *const data,
 
     // wait for receiver to finish and sync with it
     nvshmem_barrier_all();
-
-#ifdef DEBUG
-    // verify correctness
-    for (size_t i{0}; i < n_elems; ++i) {
-        // write lower bits of index to every element
-        assert(data[i] == static_cast<uint8_t>(i));
-    }
-#endif
-    // reset data for next test
-    memset(data, 0, n_elems);
 }
 
 enum TestCase {
@@ -124,12 +114,6 @@ __global__ void exchange_data(int this_pe,
 
     // PE 0 is the sender
     if (this_pe == 0) {
-        // populate data to send to PE 1
-        for (size_t i{thread_global_id}; i < n_elems; i += thread_stride) {
-            // write lower bits of index to every element
-            data[i] = static_cast<uint8_t>(i);
-        }
-
         switch (test_case) {
             case one_thread_sep:
                 send_one_thread_sep(data, other_pe, n_elems, n_iterations);

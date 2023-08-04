@@ -26,7 +26,7 @@ __device__ void send(uint8_t *const data,
                      const size_t msg_size) {
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // start for loop together
+    // start for-loop together
     __syncthreads();
 
     // send same data for specified number of iterations
@@ -60,7 +60,6 @@ __global__ void exchange_data(int this_pe,
 
     // PE 0 is the sender
     if (this_pe == 0) {
-        __syncthreads();
         send(data, other_pe, n_elems, msg_size);
 
     } else { // PE 1 is the receiver

@@ -16,7 +16,6 @@ consteval size_t log2const(size_t n) {
 }
 
 // TODO: verify results make sense and benchmark code is bug-free
-// TODO: print in csv format
 
 // from 2 go up to the max packet size in exponential steps
 constexpr size_t N_TESTS{log2const(MAX_SEND_SIZE) + 1};
@@ -29,7 +28,6 @@ __device__ void send(uint8_t *const data,
 
     // start for loop together
     __syncthreads();
-
 
     // send same data for specified number of iterations
     // when having more threads or bigger messages, we need less loop iterations because we send more in one iteration
@@ -49,18 +47,9 @@ __device__ void send(uint8_t *const data,
 }
 
 __device__ void recv(uint8_t *const data) {
-    const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
-
-    // wait until sender done
-    if (thread_global_id == 0) {
-        nvshmem_barrier_all();
-    }
+    // wait for sender to be finished
+    nvshmem_barrier_all();
 }
-
-// list of message sizes to test
-// send configruatble amount of data using put nbi with different msg sizes
-// nvshmem_quiet afterwards
-// record time for each message size
 
 __global__ void exchange_data(int this_pe,
                               uint8_t *const data,
@@ -108,7 +97,9 @@ int main(int argc, char *argv[]) {
     cudaStreamCreate(&stream);
 
     // this test is supposed to be executed on 2 PEs, each sends and receives data from the other PE
-    assert(n_pes == 2);
+    if (n_pes != 2) {
+        throw std::logic_error("This test has to be started with exactly 2 PEs.");
+    }
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * block_dim * grid_dim));

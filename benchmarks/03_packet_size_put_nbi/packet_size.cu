@@ -29,8 +29,8 @@ __device__ void send(uint8_t *const data,
     // start for-loop together
     __syncthreads();
 
-    // send same data for specified number of iterations
     // when having more threads or bigger messages, we need less loop iterations because we send more in one iteration
+    // we send the same data in every iteration to avoid memory size limitations
     for (size_t it{0}; it < n_elems / (blockDim.x * gridDim.x * msg_size); ++it) {
         nvshmem_uint8_put_nbi(
                 data + thread_global_id, // use specific offset for each thread to not run into any data race conflicts

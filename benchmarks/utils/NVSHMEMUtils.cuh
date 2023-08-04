@@ -68,4 +68,10 @@ std::chrono::microseconds time_kernel(KernelFuncType kernel_func,
     return duration_cast<microseconds>(system_clock::now() - time_start);
 }
 
+template<typename Rep, typename Period>
+double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes) {
+    using namespace std::chrono;
+    return (static_cast<double>(bytes) / 1000) / duration_cast<microseconds>(time).count();
+};
+
 #endif //NVSHMEM_DB_NVSHMEMUTILS_CUH

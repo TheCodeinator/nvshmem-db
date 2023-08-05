@@ -11,10 +11,6 @@
 
 constexpr long long MAX_SEND_SIZE{1024 * 1024};
 
-consteval size_t log2const(size_t n) {
-    return n == 1 ? 0 : 1 + log2const(n >> 1);
-}
-
 // TODO: verify results make sense and benchmark code is bug-free
 
 // from 2 go up to the max packet size in exponential steps
@@ -24,19 +20,22 @@ __global__ void exchange_data(uint8_t *const data_src,
                               uint8_t *const data_dest,
                               const uint64_t n_bytes,
                               const uint32_t msg_size) {
-    // send with given msg size until n_elems sent
+
+    // send number of bytes in total, split up in batches of given message size
     for (size_t i{0}; i < (n_bytes / msg_size); ++i) {
         nvshmem_uint8_fcollect(NVSHMEM_TEAM_WORLD, data_dest, data_src, msg_size);
     }
 
-    // make sure all PEs finish together when all have executed every iteration
+    // sync all PEs
     nvshmem_barrier_all();
 }
+
+// TODO: use host to measure time since GPU clock frq. can change dynamically and is therefore not reliable
 
 /**
  * cmd arguments:
  * 0) program name (implicit)
- * 1) number of bytes to transfer per PE
+ * 1) number of bytes to send per PE
  */
 int main(int argc, char *argv[]) {
     // init nvshmem
@@ -59,20 +58,18 @@ int main(int argc, char *argv[]) {
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data_src = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE));
+    // dest array has space for each PE's data
     auto *const data_dest = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * n_pes));
 
-    std::vector<std::pair<uint32_t, std::chrono::microseconds>> measurements{};
+    std::vector<std::pair<uint32_t, std::chrono::microseconds >> measurements{};
     measurements.reserve(N_TESTS);
 
     for (size_t test{0}; test < N_TESTS; ++test) {
-        const uint32_t msg_size = std::pow(2, test);
+        const uint32_t msg_size = int_pow(2, test);
         measurements.emplace_back(msg_size,
                                   time_kernel(exchange_data, grid_dim, block_dim, 1024 * 4, stream,
                                               data_src, data_dest, n_bytes, msg_size));
     }
-
-    // wait for kernel to finish
-    CUDA_CHECK(cudaDeviceSynchronize());
 
     // deallocate all the memory that has been allocated
     nvshmem_free(data_src);
@@ -80,7 +77,7 @@ int main(int argc, char *argv[]) {
 
     if (this_pe == 0) {
         for (const auto &meas: measurements) {
-            std::cout << "msg_size = " << meas.first << ", throughput = " << gb_per_sec(meas.second, n_bytes) << "GB/s"
+            std::cout << "msg_size = " << meas.first << ", throughput = " << gb_per_sec(meas.second, n_bytes) << " GB/s"
                       << std::endl;
         }
     }

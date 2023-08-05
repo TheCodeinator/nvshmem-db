@@ -11,14 +11,8 @@
 #include "NVSHMEMUtils.cuh"
 
 // TODO: verify results make sense
-// TODO: return results to CPU and print in csv format
 
 constexpr size_t N_TESTS{3};
-
-enum SendState {
-    RUNNING = 0,
-    FINISHED = 1,
-};
 
 __device__ void send_one_thread_sep(uint8_t *const data,
                                     const int other_pe,

@@ -9,11 +9,7 @@
 #include "NVSHMEMUtils.cuh"
 #include "Macros.cuh"
 
-constexpr long long MAX_SEND_SIZE{1024 * 1024 * 16};
-
-consteval size_t log2const(size_t n) {
-    return n == 1 ? 0 : 1 + log2const(n >> 1);
-}
+constexpr long long MAX_SEND_SIZE{1024 * 1024};
 
 // TODO: verify results make sense and benchmark code is bug-free
 
@@ -108,7 +104,7 @@ int main(int argc, char *argv[]) {
 
     // send msgs with exponentially increasing sizes starting from 2
     for (size_t test{0}; test < N_TESTS; ++test) {
-        const auto msg_size = static_cast<uint32_t>(std::pow(2, test));
+        const auto msg_size = static_cast<uint32_t>(int_pow(2, test));
         measurements.emplace_back(msg_size,
                                   time_kernel(exchange_data, grid_dim, block_dim, 1024 * 4, stream,
                                               this_pe, data, n_elems, msg_size));

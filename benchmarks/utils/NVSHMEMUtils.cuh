@@ -74,4 +74,23 @@ double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes)
     return (static_cast<double>(bytes) / 1000) / duration_cast<microseconds>(time).count();
 };
 
+consteval size_t log2const(size_t n) {
+    return n == 1 ? 0 : 1 + log2const(n >> 1);
+}
+
+/**
+ * use with case to avoid overflow and too much compile-time recursion.
+ * Evaluated at compile time of possible
+ */
+constexpr size_t int_pow(size_t base, size_t power) {
+    if (power == 1){
+        return base;
+    } else if (power == 0) {
+        return 1;
+    }
+
+    return base * int_pow(base, power - 1);
+}
+
+
 #endif //NVSHMEM_DB_NVSHMEMUTILS_CUH

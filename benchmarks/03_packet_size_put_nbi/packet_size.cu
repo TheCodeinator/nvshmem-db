@@ -9,7 +9,7 @@
 #include "NVSHMEMUtils.cuh"
 #include "Macros.cuh"
 
-constexpr long long MAX_SEND_SIZE{1024 * 1024 * 16};
+constexpr long long MAX_SEND_SIZE{1024 * 1024};
 
 // TODO: verify results make sense and benchmark code is bug-free
 

@@ -49,6 +49,7 @@ if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
     MESSAGE("Setting debug build options.")
 
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb -DDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb -DDEBUG -Wall -Wextra -Wconversion")
     add_compile_options( "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-src-in-ptx;-lineinfo;-G>")
     add_compile_definitions(-DDEBUG)
 endif ()

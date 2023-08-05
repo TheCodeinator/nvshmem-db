@@ -11,10 +11,6 @@
 
 constexpr long long MAX_SEND_SIZE{1024 * 1024};
 
-consteval size_t log2const(size_t n) {
-    return n == 1 ? 0 : 1 + log2const(n >> 1);
-}
-
 // TODO: verify results make sense and benchmark code is bug-free
 
 // from 2 go up to the max packet size in exponential steps
@@ -62,35 +58,28 @@ int main(int argc, char *argv[]) {
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data_src = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE));
+    // dest array has space for each PE's data
     auto *const data_dest = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * n_pes));
 
     std::vector<std::pair<uint32_t, std::chrono::microseconds >> measurements{};
     measurements.reserve(N_TESTS);
 
     for (size_t test{0}; test < N_TESTS; ++test) {
-        const uint32_t msg_size = std::pow(2, test);
+        const uint32_t msg_size = int_pow(2, test);
         measurements.emplace_back(msg_size,
                                   time_kernel(exchange_data, grid_dim, block_dim, 1024 * 4, stream,
                                               data_src, data_dest, n_bytes, msg_size));
     }
 
-    // call benchmarking kernel
-    void *args[] = {&this_pe,
-                    const_cast<uint8_t **>(&data_src),
-                    const_cast<uint8_t **>(&data_dest),
-                    const_cast<uint64_t *>(&n_bytes)};
-    NVSHMEM_CHECK(
-            nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
-
-    // wait for kernel to finish
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    // deallocate all the memory that has been alocated
+    // deallocate all the memory that has been allocated
     nvshmem_free(data_src);
     nvshmem_free(data_dest);
 
-    for (const auto &meas: measurements) {
-        std::cout << "msg_size = " << meas.first << ", throughput = " << gb_per_sec(meas.second, n_bytes) << " GB/s" << std::endl;
+    if (this_pe == 0) {
+        for (const auto &meas: measurements) {
+            std::cout << "msg_size = " << meas.first << ", throughput = " << gb_per_sec(meas.second, n_bytes) << " GB/s"
+                      << std::endl;
+        }
     }
 
     // TODO: print results in suitable CSV format

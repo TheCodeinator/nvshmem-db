@@ -270,7 +270,6 @@ __global__ void shuffle_with_offset(const uint8_t *const localData,
         // if there might be a full buffer or tuple count reached, send data out
         // We do not track all buffersComp individually, because we can only await all async operations at once anyways
         //printf("PE: %d, offset: %d\n", thisPe, offset);
-        printf("PE %d, Thread %d: offset %d, iteration %d, iterationToSend %d, tupleCount %lu\n", thisPe, tid, offset, iteration, iterationToSend, data->tupleCount);
         if (++iteration % iterationToSend == 0 || i + data->threadCount >= data->tupleCount) {
             nvshmem_quiet(); // wait for previous send to be completed => buffersBackup reusable after quiet finishes
             __syncthreads(); // sync threads before send operation (to ensure that all threads have written their data into the buffer)
@@ -392,9 +391,7 @@ __host__ ShuffleResult shuffle(
     NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffle_with_offset<writeToBufferMode>, 1, hostShuffleData.threadCount, shuffleArgs, 1024 * 4, stream));
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
     nvshmem_barrier_all(); // wait for all send operations to finish
-
-    print_tuple_result<<<1, 1, 1024 * 4, stream>>>(thisPe, symmMem, tupleSize, offsetsResult.thisPartitionSize);
-
+    printf("PE %d: shuffle finished with %lu tuples\n", thisPe, offsetsResult.thisPartitionSize);
     ShuffleResult result{};
     result.partitionSize = offsetsResult.thisPartitionSize;
     result.tuples = reinterpret_cast<uint8_t *>(malloc(offsetsResult.thisPartitionSize * tupleSize));

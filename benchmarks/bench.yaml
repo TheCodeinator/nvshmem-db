@@ -1,14 +1,33 @@
 - name: Run benchmarks
-  hosts: all
+  hosts: c01.lab.dm.informatik.tu-darmstadt.de
   vars:
     benchmarks:
 #      - "01_put_coalescing"
        - "02_shuffle"
        - "03_single_multi_launch"
   tasks:
+    - name: Synchronize benchmark scripts
+      synchronize:
+        src: "{{ item }}/run.sh"
+        dest: "~/nvshmem-db/benchmarks/{{ item }}/run.sh"
+        delete: true
+      loop: "{{ benchmarks }}"
+
     - name: Run benchmark
       shell: |
         cd ~/nvshmem-db/benchmarks/{{ item }}
-        ./bench.sh
-      delegate_to: c01.lab.dm.informatik.tu-darmstadt.de
+        ./run.sh
+      register: shell_output
+      loop: "{{ benchmarks }}"
+
+    - name: Print shell output line by line
+      debug:
+        msg: "{{ item }}"
+      loop: "{{ shell_output.results | map(attribute='stdout_lines') | list }}"
+
+    - name: Collect results from node
+      fetch:
+        src: "~/nvshmem-db/benchmarks/{{ item }}/results.csv"
+        dest: "tools/results/{{ item }}.csv"
+        flat: yes
       loop: "{{ benchmarks }}"

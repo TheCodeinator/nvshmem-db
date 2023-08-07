@@ -10,6 +10,6 @@ u- name: Run benchmarks
           -DNVSHMEM_PREFIX=/opt/nvshmem/ \
           -DMPI_HOME=/usr/hpcx/ompi \
           -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-11 \
-          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_BUILD_TYPE=Release
 
         make

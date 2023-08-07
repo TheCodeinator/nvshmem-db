@@ -6,29 +6,7 @@
 #include <c++/10/array>
 #include "nvshmem.h"
 #include "Meas.cuh"
-
-// used to check the status code of cuda routines for errors
-#undef CUDA_CHECK
-#define CUDA_CHECK(stmt)                                                          \
-    do {                                                                          \
-        cudaError_t _CHECK_result = (stmt);                                              \
-        if (cudaSuccess != _CHECK_result) {                                              \
-            fprintf(stderr, "[%s:%d] cuda failed with %s \n", __FILE__, __LINE__, \
-                    cudaGetErrorString(_CHECK_result));                                  \
-            exit(-1);                                                             \
-        }                                                                         \
-    } while (0)
-
-// used to check the status code of NVSHMEM routines for errors
-#define NVSHMEM_CHECK(stmt)                                                                \
-    do {                                                                                   \
-        int _CHECK_result = (stmt);                                                               \
-        if (NVSHMEMX_SUCCESS != _CHECK_result) {                                                  \
-            fprintf(stderr, "[%s:%d] nvshmem failed with error %d \n", __FILE__, __LINE__, \
-                    _CHECK_result);                                                               \
-            exit(-1);                                                                      \
-        }                                                                                  \
-    } while (0)
+#include "Macros.cuh"
 
 // TODO: verify results make sense
 // TODO: return results to CPU and print in csv format
@@ -291,7 +269,7 @@ int main(int argc, char *argv[]) {
     // copy results to host
     cudaMemcpy(meas_host, meas_dev, sizeof(Meas) * N_TESTS, cudaMemcpyDeviceToHost);
 
-    // deallocate all the memory that has been alocated
+    // deallocate all the memory that has been allocated
     cudaFree(meas_dev);
     nvshmem_free(data);
     nvshmem_free(flag);
@@ -309,16 +287,10 @@ int main(int argc, char *argv[]) {
                       "recv(send_multi_thread_sep"};
     }
 
-    for (size_t i{0}; i < N_TESTS; ++i) {
-        usleep(this_pe * N_TESTS + i * 100);
-        std::cout << test_names[i] << ": " << meas_host[i].to_string(n_iterations * n_elems) << std::endl;
+    if (this_pe == 0) {
+        for (size_t i{0}; i < N_TESTS; ++i) {
+            std::cout << "," << meas_host[i].get_throughput(n_iterations * n_elems);
+        }
+        std::cout << std::endl;
     }
-
-    // TODO: print results in suitable CSV format
-
-//    std::ofstream outfile;
-//    outfile.open("results.csv");
-//    outfile << "type, node_count,in n,out n" << std::endl;
-//
-//    outfile.close();
 }

@@ -7,6 +7,7 @@
 #include <string>
 #include "rdma.hpp"
 #include "Macros.cuh"
+#include "NVSHMEMUtils.cuh"
 
 /*
     Emulate calculation of sending destination and writing in output buffer
@@ -40,35 +41,41 @@ __global__ void calculate_and_send(const uint32_t* in, uint32_t* buff, uint32_t 
 
 int main(int argc, char* argv[]){
 
+    assert(argc == 4);
+    const size_t size_in = std::stoull(argv[1]);
+    const std::string ip1 = argv[2];
+    const std::string ip2 = argv[3];
+
     // create cuda streams for alternating in new kernel launches
     cudaStream_t stream1, stream2;
     CUDA_CHECK(cudaStreamCreate(&stream1));
     CUDA_CHECK(cudaStreamCreate(&stream2));
 
     // get nvshmem environment information
+    nvshmem_init();
     uint32_t this_pe, n_pes;
+
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
     n_pes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
 
     // rdma environment information
-    std::vector<string> ips;
-    string ip = "";
-    uint32_t rdma_port = 0;
+    std::vector<std::string> ips {ip1, ip2};
+    string my_ip = ips[this_pe];
+    uint32_t rdma_port = 5000;
 
-    size_t size_in;
     auto* in = static_cast<uint32_t *>(cudaMalloc(size_in*sizeof(uint32_t)));
     cudaMemset(in, 1, size_in*sizeof(uint32_t));
 
     size_t size_buff;
     auto* buff = static_cast<uint32_t *>(cudaMalloc(size_buff*sizeof(uint32_t)));
-    auto* sym_mem = static_cast<uint32_t *>(nvshmem_malloc(buff_size*sizeof(uint32_t)));
+    auto* sym_mem = static_cast<uint32_t *>(nvshmem_malloc(size_buff*sizeof(uint32_t)));
 
     // Make RDMA connection
 
     rdma::Server server{ip, rdma_port};
     rdma::Client client{ip, rdma_port};
 
-    std::vector<rdma::Connection*> conns;
+    std::vector<rdma::Connection*> conns {};
 
     for(uint32_t i{0}, i<ips.size(), i++){
         conns.push_back(client.connect_to(i, rdma_port));
@@ -83,7 +90,7 @@ int main(int argc, char* argv[]){
 
     void* args[] = {in, buff, size_in, size_buff, sym_mem, this_pe};
     auto start = std::chrono::steady_clock::now();
-    nvshmemx_collective_launch(&calculate_and_send, 1, 1, args, size_buff, stream1);
+    collective_launch(calculate_and_send, 1, 1, size_buff, stream1, args);
     cudaStreamSynchronize(stream1);
     auto stop = std::chrono::steady_clock::now();
     auto dur = stop-start;
@@ -106,6 +113,9 @@ int main(int argc, char* argv[]){
     auto t_ms2 = dur.count()*1e-6;
 
     outfile.close();
+
+    nvshmem_free(sym_mem);
+    nvshmem_finalize();
 
     return EXIT_SUCCESS;
 

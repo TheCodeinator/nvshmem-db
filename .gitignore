@@ -35,3 +35,6 @@ cmake-build-*/
 
 ## Mac OS
 .DS_Store
+
+## Python virtual env
+/venv

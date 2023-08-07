@@ -4,7 +4,8 @@
     benchmarks:
       - "01_put_coalescing"
       - "02_shuffle"
-      - "03_packet_size"
+      - "03_packet_size_put_nbi"
+      - "04_packet_size_fcollect"
   tasks:
     - name: Create project directory
       file:
@@ -29,6 +30,8 @@
         - src: "CMakeLists.txt"
           dest: "~/nvshmem-db/benchmarks/"
         - src: "hosts.txt"
+          dest: "~/nvshmem-db/benchmarks/"
+        - src: "utils"
           dest: "~/nvshmem-db/benchmarks/"
         - src: "../inc"
           dest: "~/nvshmem-db/"

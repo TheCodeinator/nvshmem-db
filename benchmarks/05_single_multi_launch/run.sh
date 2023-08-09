@@ -9,5 +9,5 @@ echo "type,num_bytes,launches,time_nvshmem,time_rdma" > $output_file
 
 for size in "${input_size[@]}"; do
   echo "Running for input size $size"
-  nvshmrun -n 2 -ppn 1 --hosts 10.0.2.11,10.0.2.12 ./bench_05_single_multi_launch $size 10.0.2.11 10.0.2.12 >> $output_file
+  nvshmrun -np 2 ./bench_05_single_multi_launch $size 172.18.94.10 172.18.94.11 > $output_file
 done

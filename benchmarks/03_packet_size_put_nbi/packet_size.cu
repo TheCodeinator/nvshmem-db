@@ -9,7 +9,7 @@
 #include "NVSHMEMUtils.cuh"
 #include "Macros.cuh"
 
-constexpr long long MAX_SEND_SIZE{1024 * 1024};
+constexpr long long MAX_SEND_SIZE{4096};
 
 // TODO: verify results make sense and benchmark code is bug-free
 
@@ -138,8 +138,7 @@ int main(int argc, char *argv[]) {
                       << "," << n_elems
                       << "," << grid_dim
                       << "," << block_dim
-                      << "," << gb_per_sec(meas.second /* nanoseconds */, n_elems)
-                      << "," << meas.second.count() << std::endl;
+                      << "," << gb_per_sec(meas.second /* nanoseconds */, n_elems) << std::endl;
         }
     }
 }

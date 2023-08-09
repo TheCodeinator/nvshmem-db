@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
     // dest array has space for each PE's data
     auto *const data_dest = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * n_pes));
 
-    std::vector<std::pair<uint32_t, std::chrono::microseconds >> measurements{};
+    std::vector<std::pair<uint32_t, std::chrono::nanoseconds>> measurements{};
     measurements.reserve(N_TESTS);
 
     for (size_t test{0}; test < N_TESTS; ++test) {

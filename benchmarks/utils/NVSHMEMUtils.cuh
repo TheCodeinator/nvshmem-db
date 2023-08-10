@@ -65,6 +65,8 @@ std::chrono::microseconds time_kernel(KernelFuncType kernel_func,
     // wait for kernel to finish
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    cudaStreamSynchronize(cuda_stream);
+
     return duration_cast<microseconds>(system_clock::now() - time_start);
 }
 
@@ -83,7 +85,7 @@ consteval size_t log2const(size_t n) {
  * Evaluated at compile time of possible
  */
 constexpr size_t int_pow(size_t base, size_t power) {
-    if (power == 1){
+    if (power == 1) {
         return base;
     } else if (power == 0) {
         return 1;
@@ -92,5 +94,18 @@ constexpr size_t int_pow(size_t base, size_t power) {
     return base * int_pow(base, power - 1);
 }
 
+__device__ inline uint global_thread_id() {
+    uint blockId = blockIdx.x + blockIdx.y * gridDim.x
+                   + gridDim.x * gridDim.y * blockIdx.z;
+    uint threadId = blockId * (blockDim.x * blockDim.y * blockDim.z)
+                    + (threadIdx.z * (blockDim.x * blockDim.y))
+                    + (threadIdx.y * blockDim.x) + threadIdx.x;
+    return threadId;
+}
+
+__device__ inline uint global_thread_count() {
+    return gridDim.x * gridDim.y * gridDim.z
+           * blockDim.x * blockDim.y * blockDim.z;
+}
 
 #endif //NVSHMEM_DB_NVSHMEMUTILS_CUH

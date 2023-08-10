@@ -12,4 +12,4 @@
           -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-11 \
           -DCMAKE_BUILD_TYPE=Release
 
-        make
+        make -j

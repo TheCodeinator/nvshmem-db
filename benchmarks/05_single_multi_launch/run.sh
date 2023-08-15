@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# disable communication over NVLINK or PCI
+export NVSHMEM_DISABLE_P2P=true
+
 input_size=(1000 10000 100000 1000000)
 
 output_file="results.csv"

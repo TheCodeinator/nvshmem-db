@@ -6,7 +6,8 @@
       - "02_shuffle"
       - "03_packet_size_put_nbi"
       - "04_packet_size_fcollect"
-      - "05_put_granularity"
+      - "05_single_multi_launch"
+      - "06_put_granularity"
   tasks:
     - name: Create project directory
       file:

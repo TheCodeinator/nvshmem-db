@@ -9,7 +9,7 @@
 #include "NVSHMEMUtils.cuh"
 #include "Macros.cuh"
 
-constexpr long long MAX_SEND_SIZE{1024 * 1024};
+constexpr long long MAX_SEND_SIZE{4096};
 
 // TODO: verify results make sense and benchmark code is bug-free
 
@@ -29,8 +29,8 @@ __device__ void send(uint8_t *const data,
     // we send the same data in every iteration to avoid memory size limitations
     for (size_t it{0}; it < n_elems / (blockDim.x * gridDim.x * msg_size); ++it) {
         nvshmem_uint8_put_nbi(
-                data + thread_global_id, // use specific offset for each thread to not run into any data race conflicts
-                data + thread_global_id,
+                data + MAX_SEND_SIZE * thread_global_id, // use specific offset for each thread to not run into any data race conflicts
+                data + MAX_SEND_SIZE * thread_global_id,
                 msg_size,
                 other_pe);
     }
@@ -66,6 +66,18 @@ __global__ void exchange_data(int this_pe,
     }
 }
 
+// Do a barrier operation to prevent compile from optimizing out empty kernel
+__global__ void warmup(){
+
+	const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if(thread_global_id == 0) {
+		nvshmem_barrier_all();
+	}
+
+}
+
+
 /**
  * cmd arguments:
  * 0) program name (implicit)
@@ -99,12 +111,17 @@ int main(int argc, char *argv[]) {
     // allocate symmetric device memory for sending/receiving the data
     auto *const data = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * block_dim * grid_dim));
 
-    std::vector<std::pair<uint32_t, std::chrono::microseconds>> measurements{};
+    std::vector<std::pair<uint32_t, std::chrono::nanoseconds>> measurements{};
     measurements.reserve(N_TESTS);
+
+    // do not time warmup
+    collective_launch(warmup, 1, 1, 1024, stream);
+   
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     // send msgs with exponentially increasing sizes starting from 2
     for (size_t test{0}; test < N_TESTS; ++test) {
-        const auto msg_size = static_cast<uint32_t>(int_pow(2, test));
+        const auto msg_size = static_cast<uint64_t>(int_pow(2, test));
         measurements.emplace_back(msg_size,
                                   time_kernel(exchange_data, grid_dim, block_dim, 1024 * 4, stream,
                                               this_pe, data, n_elems, msg_size));
@@ -121,7 +138,7 @@ int main(int argc, char *argv[]) {
                       << "," << n_elems
                       << "," << grid_dim
                       << "," << block_dim
-                      << "," << gb_per_sec(meas.second /* microseconds */, n_elems) << std::endl;
+                      << "," << gb_per_sec(meas.second /* nanoseconds */, n_elems) << std::endl;
         }
     }
 }

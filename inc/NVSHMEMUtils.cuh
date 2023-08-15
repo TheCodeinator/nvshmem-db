@@ -50,7 +50,7 @@ void collective_launch(KernelFuncType kernel_func,
  * @param args const references arguments to pass to the kernel function
  */
 template<typename KernelFuncType, typename... Args>
-std::chrono::microseconds time_kernel(KernelFuncType kernel_func,
+std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
                                       const uint32_t grid_dim,
                                       const uint32_t block_dim,
                                       const uint32_t shared_mem,
@@ -58,20 +58,20 @@ std::chrono::microseconds time_kernel(KernelFuncType kernel_func,
                                       Args &&... args) {
     using namespace std::chrono;
 
-    auto time_start = system_clock::now();
+    auto time_start = steady_clock::now();
 
     collective_launch(kernel_func, grid_dim, block_dim, shared_mem, cuda_stream, std::forward<Args>(args)...);
 
     // wait for kernel to finish
-    CUDA_CHECK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaStreamSynchronize(cuda_stream));
 
-    return duration_cast<microseconds>(system_clock::now() - time_start);
+    return duration_cast<nanoseconds>(steady_clock::now() - time_start);
 }
 
 template<typename Rep, typename Period>
 double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes) {
     using namespace std::chrono;
-    return (static_cast<double>(bytes) / 1000) / duration_cast<microseconds>(time).count();
+    return static_cast<double>(bytes) / time.count();
 };
 
 consteval size_t log2const(size_t n) {

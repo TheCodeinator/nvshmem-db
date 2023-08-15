@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
     auto *const data = static_cast<uint8_t *>(nvshmem_malloc(n_elems));
 
     // vector to store the measurements for the different kernel calls
-    std::vector<std::chrono::microseconds> measurements{};
+    std::vector<std::chrono::nanoseconds> measurements{};
     measurements.reserve(N_TESTS);
 
     for (int t_case = one_thread_sep; t_case <= multi_thread_sep; ++t_case) {

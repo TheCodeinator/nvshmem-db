@@ -1,6 +1,6 @@
 #!/bin/bash
 
-input_size = (1000,10000,100000,1000000)
+input_size=(1000 10000 100000 1000000)
 
 output_file="results.csv"
 rm -f $output_file

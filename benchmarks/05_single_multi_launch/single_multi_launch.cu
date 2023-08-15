@@ -110,16 +110,18 @@ int main(int argc, char* argv[]){
     for(auto i{0}; i<size_in; i+=2*size_buff){
         calculate<<<1,1,0,stream1>>>(in+i, buff, size_buff);
         cudaStreamSynchronize(stream1);
-        calculate<<<1,1,0,stream2>>>(in+i+size_buff, buff, size_buff);
         conn->write(in+i,
                     size_buff*sizeof(uint32_t),
                     size_in*sizeof(uint32_t)+i*sizeof(uint32_t),
                     rdma::Flags().signaled());
+        if(i!=0) conn->sync_signaled(1);
+        calculate<<<1,1,0,stream2>>>(in+i+size_buff, buff, size_buff);
         cudaStreamSynchronize(stream2);
         conn->write(in+i+size_buff,
                     size_buff*sizeof(uint32_t),
                     size_in*sizeof(uint32_t)+i*sizeof(uint32_t)+size_buff*sizeof(uint32_t),
                     rdma::Flags().signaled());
+        conn->sync_signaled(1);
     }
 
     // wait till all writes are finished

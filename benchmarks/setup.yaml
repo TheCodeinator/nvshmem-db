@@ -43,6 +43,10 @@
           dest: "~/nvshmem-db/"
         - src: "../test"
           dest: "~/nvshmem-db/"
+        - src: "../distexprunner"
+          dest: "~/nvshmem-db/"
+        - src: "../librdmapp"
+          dest: "~/nvshmem-db/"
         - src: "../../CMakeLists.txt"
           dest: "~/nvshmem-db/"
 

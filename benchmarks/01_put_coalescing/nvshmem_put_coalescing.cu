@@ -122,7 +122,7 @@ __global__ void exchange_data(int this_pe,
     } else { // PE 1 is the receiver
         // receiver does not do anything but waiting, only needs one thread in all scenarios
         if (thread_global_id == 0) {
-                recv(data, other_pe, n_elems, n_iterations);
+            recv(data, other_pe, n_elems, n_iterations);
         }
     }
 }
@@ -152,8 +152,16 @@ int main(int argc, char *argv[]) {
     cudaSetDevice(this_pe);
     cudaStreamCreate(&stream);
 
-    // this test is supposed to be executed on 2 PEs, each sends and receives data from the other PE
-    assert(n_pes == 2);
+    if (n_pes != 2) {
+        throw std::logic_error(
+                "this test is supposed to be executed on 2 PEs, each sends and receives data from the other PE.");
+    }
+
+    if (n_elems / (grid_dim * block_dim) < 1 || n_elems % (grid_dim * block_dim) != 0) {
+        throw std::logic_error(
+                "Make sure the number of elements is a multiple of the total number of threads"
+        );
+    }
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data = static_cast<uint8_t *>(nvshmem_malloc(n_elems));
@@ -171,7 +179,7 @@ int main(int argc, char *argv[]) {
     nvshmem_free(data);
 
     if (this_pe == 0) {
-        for (const auto &meas : measurements) {
+        for (const auto &meas: measurements) {
             std::cout << "," << gb_per_sec(meas, n_iterations * n_elems);
         }
         std::cout << std::endl;

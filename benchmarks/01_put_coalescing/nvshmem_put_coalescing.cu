@@ -58,7 +58,7 @@ __device__ void send_multi_thread_sep(uint8_t *const data,
                                       const uint64_t n_elems,
                                       const uint64_t n_iterations) {
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
-    const uint32_t thread_stride = blockDim.x * gridDim.y;
+    const uint32_t thread_stride = blockDim.x * gridDim.x;
 
     // start for loop together
     __syncthreads();
@@ -104,7 +104,7 @@ __global__ void exchange_data(int this_pe,
                               TestCase test_case) {
     const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
     const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
-    const uint32_t thread_stride = blockDim.x * gridDim.y;
+    const uint32_t thread_stride = blockDim.x * gridDim.x;
 
     // PE 0 is the sender
     if (this_pe == 0) {

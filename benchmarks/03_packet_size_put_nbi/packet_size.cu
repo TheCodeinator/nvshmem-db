@@ -103,9 +103,14 @@ int main(int argc, char *argv[]) {
     cudaSetDevice(this_pe);
     cudaStreamCreate(&stream);
 
-    // this test is supposed to be executed on 2 PEs, each sends and receives data from the other PE
     if (n_pes != 2) {
         throw std::logic_error("This test has to be started with exactly 2 PEs.");
+    }
+
+    if(n_elems / (block_dim * grid_dim * MAX_SEND_SIZE) < 1 || n_elems % (block_dim * grid_dim * MAX_SEND_SIZE) != 0) {
+        throw std::logic_error(
+                "Make sure that the number of elements is a multiple of the product of the total number of threads and the maximum msg size (" +
+                std::to_string(MAX_SEND_SIZE) + ").");
     }
 
     // allocate symmetric device memory for sending/receiving the data

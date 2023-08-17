@@ -30,8 +30,6 @@ __global__ void exchange_data(uint8_t *const data_src,
     nvshmem_barrier_all();
 }
 
-// TODO: use host to measure time since GPU clock frq. can change dynamically and is therefore not reliable
-
 /**
  * cmd arguments:
  * 0) program name (implicit)
@@ -53,8 +51,15 @@ int main(int argc, char *argv[]) {
     cudaSetDevice(this_pe);
     cudaStreamCreate(&stream);
 
-    // this test is supposed to be executed on 2 PEs, each sends and receives data from the other PE
-    assert(n_pes == 2);
+    if (n_pes != 2) {
+        throw std::logic_error(
+                "this test is supposed to be executed on 2 PEs, each sends and receives data from the other PE.");
+    }
+
+    if (n_bytes / MAX_SEND_SIZE < 1 || n_bytes % MAX_SEND_SIZE != 0) {
+        throw std::logic_error("Make sure that the number of bytes to send is divisible by the maximum send size (" +
+                               std::to_string(MAX_SEND_SIZE) + ").");
+    }
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data_src = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE));

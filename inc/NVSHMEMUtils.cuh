@@ -71,7 +71,7 @@ std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
 template<typename Rep, typename Period>
 double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes) {
     using namespace std::chrono;
-    return static_cast<double>(bytes) / time.count();
+    return static_cast<double>(bytes) / duration_cast<nanoseconds>(time).count();
 };
 
 consteval size_t log2const(size_t n) {

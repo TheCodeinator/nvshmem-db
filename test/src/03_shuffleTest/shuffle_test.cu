@@ -103,12 +103,10 @@ void call_shuffle(cudaStream_t &stream, shuffle_tuple **local_tuples, uint64_t *
 }
 
 int main() {
-    int nPes, thisPe;
     cudaStream_t stream;
 
     nvshmem_init();
-    thisPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
-//    cudaSetDevice(thisPe);
+    cudaSetDevice(nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE));
     cudaStreamCreate(&stream);
 
     const create_tuple_result tuple_result = create_all_local_tuples();

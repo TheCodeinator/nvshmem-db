@@ -4,7 +4,8 @@
 __host__ SendBuffers::SendBuffers(ShuffleData *data) :
         data(data)
 {
-    buffers = static_cast<uint8_t*>(nvshmem_malloc(bufferCount * data->sendBufferSize * data->peCount * sizeof(uint8_t)));
+    if(data->sendBufferSize > 0)
+        buffers = static_cast<uint8_t*>(nvshmem_malloc(bufferCount * data->sendBufferSize * data->peCount * sizeof(uint8_t)));
 
     uint offsetBufferSize = bufferCount * data->peCount * sizeof(uint32_t);
     CUDA_CHECK(cudaMalloc(&offsets, offsetBufferSize));
@@ -73,8 +74,10 @@ __device__ uint32_t *ThreadOffsets::getOffset(uint32_t batch, uint32_t thread, u
 
 
 
-__host__ ShuffleData::ShuffleData(uint32_t peCount, uint32_t threadCount, uint64_t tupleCount, uint32_t tupleSize,
-                                  uint8_t keyOffset, uint32_t sendBufferSizeMultiplier) :
+__host__ ShuffleData::ShuffleData(const uint8_t *const tuples, uint32_t peCount, uint32_t threadCount,
+                                  uint64_t tupleCount, uint32_t tupleSize, uint8_t keyOffset,
+                                  uint32_t sendBufferSizeMultiplier) :
+        tuples(tuples),
         peCount(peCount),
         threadCount(threadCount),
         tupleCount(tupleCount),

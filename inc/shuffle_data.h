@@ -79,6 +79,8 @@ public:
 
 class ShuffleData {
 public:
+    const uint8_t *const tuples;
+
     const uint32_t peCount;
     const uint32_t threadCount;
 
@@ -93,7 +95,7 @@ public:
     ThreadOffsets threadOffsets;
 
 public:
-    __host__ ShuffleData(uint32_t peCount, uint32_t threadCount, uint64_t tupleCount, uint32_t tupleSize, uint8_t keyOffset, uint32_t sendBufferSizeMultiplier);
+    __host__ ShuffleData(const uint8_t *tuples, uint32_t peCount, uint32_t threadCount, uint64_t tupleCount, uint32_t tupleSize, uint8_t keyOffset, uint32_t sendBufferSizeMultiplier);
     __host__ __device__ ShuffleData(const ShuffleData &other) = delete;
     __host__ __device__ ShuffleData(ShuffleData &&other) = delete;
     __host__ ~ShuffleData();

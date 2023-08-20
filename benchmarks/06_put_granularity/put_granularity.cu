@@ -13,17 +13,17 @@ __global__ void generalized_benchmark(uint8_t *data_source,
                                       uint8_t *data_sink,
                                       const int this_pe,
                                       const uint64_t num_bytes,
-                                      const uint64_t message_size,
-                                      const uint64_t max_send_size) {
+                                      const uint64_t message_size) {
     if (this_pe != 0) {
         // wait to receive data from PE 0
         nvshmem_barrier_all();
         return;
     }
     const uint64_t thread_id = global_thread_id();
+    const uint64_t thread_count = global_thread_count();
     const uint64_t thread_offset = thread_id * message_size;
 
-    for (uint64_t i = 0; i < num_bytes / message_size; ++i) {
+    for (uint64_t i = 0; i < num_bytes / (message_size * thread_count); ++i) {
         nvshmem_uint8_put_nbi(
             data_sink + thread_offset,
             data_source + thread_offset,

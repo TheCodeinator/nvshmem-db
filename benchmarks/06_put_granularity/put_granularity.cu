@@ -9,7 +9,6 @@
 #include "NVSHMEMUtils.cuh"
 
 
-
 __global__ void generalized_benchmark(uint8_t *data_source,
                                       uint8_t *data_sink,
                                       const int this_pe,
@@ -24,7 +23,7 @@ __global__ void generalized_benchmark(uint8_t *data_source,
     const uint64_t thread_id = global_thread_id();
     const uint64_t thread_offset = thread_id * message_size;
 
-    for (uint64_t i = 0; i < num_bytes / max_send_size; ++i) {
+    for (uint64_t i = 0; i < num_bytes / message_size; ++i) {
         nvshmem_uint8_put_nbi(
             data_sink + thread_offset,
             data_source + thread_offset,
@@ -38,8 +37,9 @@ __global__ void generalized_benchmark(uint8_t *data_source,
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 6) {
-        throw std::invalid_argument("Usage: " + std::string(argv[0]) + " <grid_dims> <block_dims> <num_hosts> <num_bytes> <max_send_size>");
+    if (argc != 6 && argc != 7) {
+        throw std::invalid_argument(
+            "Usage: " + std::string(argv[0]) + " <grid_dims> <block_dims> <num_hosts> <num_bytes> <max_send_size> [<min_send_size>]");
     }
 
     int n_pes, this_pe;
@@ -54,6 +54,12 @@ int main(int argc, char *argv[]) {
 
     // the maximum number of bytes that are sent with a single nvshmem put call (increases in powers of 2 starting at 1)
     const uint64_t max_send_size = std::stoi(argv[5]);
+
+    const uint64_t min_send_size = argc == 7 ? std::stoi(argv[6]) : 1;
+
+    if (min_send_size > max_send_size) {
+        throw std::invalid_argument("min_send_size must be smaller than max_send_size");
+    }
 
     const uint64_t buffer_size = grid_dim * block_dim * max_send_size;
 
@@ -86,11 +92,15 @@ int main(int argc, char *argv[]) {
     auto *data_source = static_cast<uint8_t *>(nvshmem_malloc(buffer_size));
     auto *data_sink = static_cast<uint8_t *>(nvshmem_malloc(buffer_size));
 
-    for (uint64_t message_size = 0; message_size < max_send_size; message_size <<= 1) {
+    for (uint64_t message_size = min_send_size; message_size <= max_send_size; message_size <<= 1) {
         const auto time_taken = time_kernel(generalized_benchmark, grid_dim, block_dim, 0, stream,
                                             data_source, data_sink, this_pe, num_bytes, message_size, max_send_size);
         if (this_pe == 0) {
-            std::cout << message_size << " bytes took " << time_taken.count() << " microseconds." << std::endl;
+            std::cout << message_size
+                      << " bytes took " << time_taken.count()
+                      << " nanoseconds "
+                      << "(" << gb_per_sec(time_taken, num_bytes) << " GB/s)"
+                      << std::endl;
         }
     }
 

@@ -26,10 +26,10 @@ __global__ void generalized_benchmark(uint8_t *data_source,
 
     for (uint64_t i = 0; i < num_bytes / (message_size * thread_count); ++i) {
         nvshmem_uint8_put_nbi(
-            data_sink + thread_offset,
-            data_source + thread_offset,
-            message_size,
-            1);
+                data_sink + thread_offset,
+                data_source + thread_offset,
+                message_size,
+                1);
     }
 
     if (thread_id == 0) {
@@ -39,10 +39,22 @@ __global__ void generalized_benchmark(uint8_t *data_source,
     }
 }
 
+// Do a barrier operation to prevent compile from optimizing out empty kernel
+__global__ void warmup() {
+
+    const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (thread_global_id == 0) {
+        nvshmem_barrier_all();
+    }
+
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 6 && argc != 7) {
         throw std::invalid_argument(
-            "Usage: " + std::string(argv[0]) + " <grid_dims> <block_dims> <num_hosts> <num_bytes> <max_send_size> [<min_send_size>]");
+                "Usage: " + std::string(argv[0]) +
+                " <grid_dims> <block_dims> <num_hosts> <num_bytes> <max_send_size> [<min_send_size>]");
     }
 
     int n_pes, this_pe;
@@ -72,12 +84,14 @@ int main(int argc, char *argv[]) {
 
     if (num_bytes / (grid_dim * block_dim * max_send_size) < 1) {
         throw std::invalid_argument(
-            "num_bytes must be greater than grid_dim * block_dim * max_send_size (= " + std::to_string(buffer_size) + ")");
+                "num_bytes must be greater than grid_dim * block_dim * max_send_size (= " +
+                std::to_string(buffer_size) + ")");
     }
 
     if (num_bytes % (grid_dim * block_dim * max_send_size) != 0) {
         throw std::invalid_argument(
-            "num_bytes must be a multiple of grid_dim * block_dim * max_send_size (= " + std::to_string(buffer_size) + ")");
+                "num_bytes must be a multiple of grid_dim * block_dim * max_send_size (= " +
+                std::to_string(buffer_size) + ")");
     }
 
     nvshmem_init();
@@ -94,6 +108,9 @@ int main(int argc, char *argv[]) {
     // each thread is allocated one MAX_SEND_SIZE element, which is re-sent until num_bytes are sent
     auto *data_source = static_cast<uint8_t *>(nvshmem_malloc(buffer_size));
     auto *data_sink = static_cast<uint8_t *>(nvshmem_malloc(buffer_size));
+
+    // warm up device
+    collective_launch(warmup, grid_dim, block_dim, 0, stream);
 
     for (uint64_t message_size = min_send_size; message_size <= max_send_size; message_size <<= 1) {
         const auto time_taken = time_kernel(generalized_benchmark, grid_dim, block_dim, 0, stream,

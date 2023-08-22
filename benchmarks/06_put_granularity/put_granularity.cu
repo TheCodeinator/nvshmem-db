@@ -14,14 +14,15 @@ __global__ void generalized_benchmark(uint8_t *data_source,
                                       const int this_pe,
                                       const uint64_t num_bytes,
                                       const uint64_t message_size) {
-    if (this_pe != 0) {
+    const uint64_t thread_id = global_thread_id();
+    const uint64_t thread_count = global_thread_count();
+    const uint64_t thread_offset = thread_id * message_size;
+
+    if (this_pe != 0 && thread_id == 0) {
         // wait to receive data from PE 0
         nvshmem_barrier_all();
         return;
     }
-    const uint64_t thread_id = global_thread_id();
-    const uint64_t thread_count = global_thread_count();
-    const uint64_t thread_offset = thread_id * message_size;
 
     for (uint64_t i = 0; i < num_bytes / (message_size * thread_count); ++i) {
         nvshmem_uint8_put_nbi(
@@ -31,9 +32,11 @@ __global__ void generalized_benchmark(uint8_t *data_source,
             1);
     }
 
-    nvshmem_quiet();
-    // synchronize all PEs (notify PE 1 that data is finished)
-    nvshmem_barrier_all();
+    if (thread_id == 0) {
+        nvshmem_quiet();
+        // synchronize all PEs (notify PE 1 that data is finished)
+        nvshmem_barrier_all();
+    }
 }
 
 int main(int argc, char *argv[]) {

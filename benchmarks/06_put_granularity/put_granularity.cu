@@ -82,13 +82,13 @@ int main(int argc, char *argv[]) {
         throw std::invalid_argument("max_send_size must be a power of 2");
     }
 
-    if (num_bytes / (grid_dim * block_dim * max_send_size) < 1) {
+    if (num_bytes / (buffer_size) < 1) {
         throw std::invalid_argument(
                 "num_bytes must be greater than grid_dim * block_dim * max_send_size (= " +
                 std::to_string(buffer_size) + ")");
     }
 
-    if (num_bytes % (grid_dim * block_dim * max_send_size) != 0) {
+    if (num_bytes % (buffer_size) != 0) {
         throw std::invalid_argument(
                 "num_bytes must be a multiple of grid_dim * block_dim * max_send_size (= " +
                 std::to_string(buffer_size) + ")");

@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
                                             data_source, data_sink, this_pe, num_bytes, message_size, max_send_size);
         if (this_pe == 0) {
             std::cout << message_size
-                      << " bytes took " << time_taken.count()
+                      << " bytes sized packages took " << time_taken.count()
                       << " nanoseconds "
                       << "(" << gb_per_sec(time_taken, num_bytes) << " GB/s)"
                       << std::endl;

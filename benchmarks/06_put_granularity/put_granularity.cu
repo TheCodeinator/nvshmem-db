@@ -102,6 +102,7 @@ int main(int argc, char *argv[]) {
         const auto time_taken = time_kernel(generalized_benchmark, grid_dim, block_dim, 0, stream,
                                             data_source, data_sink, this_pe, count, message_size);
         if (this_pe == 0) {
+            uint64_t num_bytes = grid_dim * block_dim * message_size * count;
             std::cout << "06_put_granularity"
                       << "," << grid_dim
                       << "," << block_dim
@@ -109,7 +110,8 @@ int main(int argc, char *argv[]) {
                       << "," << count // number of times that the message size is sent in total per kernel
                       << "," << max_message_size
                       << "," << message_size // size of a single send operation (with put nbi)
-                      << "," << gb_per_sec(time_taken, grid_dim * block_dim * message_size * count)
+                      << "," << num_bytes
+                      << "," << gb_per_sec(time_taken, num_bytes)
                       << std::endl;
         }
     }

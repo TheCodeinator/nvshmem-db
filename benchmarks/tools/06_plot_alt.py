@@ -20,7 +20,7 @@ node_labels = {
     2: "2 Nodes",
 }
 
-fig, axs = plt.subplots(nrows=grid_sizes.size, ncols=block_sizes.size, figsize=(30, 15))
+fig, axs = plt.subplots(nrows=grid_sizes.size, ncols=block_sizes.size, figsize=(30, 10))
 fig.suptitle(f'06_put_granularity', fontsize=16)
 
 for i, grid_size in enumerate(grid_sizes):
@@ -33,10 +33,10 @@ for i, grid_size in enumerate(grid_sizes):
 
             colors = ['g', 'b', 'r']
             label = node_labels.get(node_count, f"Node Count: {node_count}")
-            df_subset.set_index('message_size')['throughput'].plot(ax=ax, marker='o', color=colors[idx], label=label)
+            df_subset.set_index('num_bytes')['throughput'].plot(ax=ax, marker='o', color=colors[idx], label=label)
 
         ax.set_title(f'Grid Size: {grid_size}, Block Size: {block_size}')
-        ax.set_xlabel('Message size per thread (bytes)')
+        ax.set_xlabel('Total num bytes sent')
         ax.set_ylabel('Total throughput GB/s')
         ax.legend()
 

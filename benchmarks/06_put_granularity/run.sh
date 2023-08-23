@@ -1,13 +1,9 @@
 #!/bin/bash
 
-
-
-# 8 MiB
-max_send_size=8388608
-# 1 B
+max_send_size=8388608 # 8 MiB
 min_send_size=1
 
-count=16
+count=32
 
 grids_list=(1 2 4 8)
 blocks_list=(1 8 32 64)
@@ -15,7 +11,7 @@ blocks_list=(1 8 32 64)
 output_file="results.csv"
 rm -f $output_file
 touch $output_file
-echo "type,grid_dim,block_dim,num_hosts,count,max_message_size,message_size,throughput" > $output_file
+echo "type,grid_dim,block_dim,num_hosts,count,max_message_size,message_size,num_bytes,throughput" > $output_file
 
 for grid in "${grids_list[@]}"; do
   for block in "${blocks_list[@]}"; do

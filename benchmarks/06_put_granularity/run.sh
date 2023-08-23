@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# disable communication over NVLINK or PCI
-export NVSHMEM_DISABLE_P2P=true
+
 
 # 8 MiB
 max_send_size=8388608
@@ -20,7 +19,17 @@ echo "type,grid_dim,block_dim,num_hosts,count,max_message_size,message_size,thro
 
 for grid in "${grids_list[@]}"; do
   for block in "${blocks_list[@]}"; do
-    echo "Running with 1 host (2 PEs) num_grids=$grid, num_blocks=$block"
+    echo "Running with 1 host (2 PEs) NVLINK num_grids=$grid, num_blocks=$block"
+    nvshmrun -np 2 ./bench_06_put_granularity $grid $block 0 $count $max_send_size $min_send_size>>$output_file
+  done
+done
+
+# disable communication over NVLINK or PCI
+export NVSHMEM_DISABLE_P2P=true
+
+for grid in "${grids_list[@]}"; do
+  for block in "${blocks_list[@]}"; do
+    echo "Running with 1 host (2 PEs) NO NVLINK num_grids=$grid, num_blocks=$block"
     nvshmrun -np 2 ./bench_06_put_granularity $grid $block 1 $count $max_send_size $min_send_size>>$output_file
   done
 done

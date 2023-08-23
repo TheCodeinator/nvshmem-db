@@ -26,10 +26,10 @@ __global__ void generalized_benchmark(uint8_t *data_source,
 
     for (uint64_t i = 0; i < num_bytes / (message_size * thread_count); ++i) {
         nvshmem_uint8_put_nbi(
-                data_sink + thread_offset,
-                data_source + thread_offset,
-                message_size,
-                1);
+            data_sink + thread_offset,
+            data_source + thread_offset,
+            message_size,
+            1);
     }
 
     if (thread_id == 0) {
@@ -52,9 +52,8 @@ __global__ void warmup() {
 
 int main(int argc, char *argv[]) {
     if (argc != 6 && argc != 7) {
-        throw std::invalid_argument(
-                "Usage: " + std::string(argv[0]) +
-                " <grid_dims> <block_dims> <num_hosts> <num_bytes> <max_send_size> [<min_send_size>]");
+        throw std::invalid_argument("Usage: " + std::string(argv[0]) +
+                                    " <grid_dims> <block_dims> <num_hosts> <num_bytes> <max_send_size> [<min_send_size>]");
     }
 
     int n_pes, this_pe;
@@ -65,12 +64,12 @@ int main(int argc, char *argv[]) {
     const uint32_t num_hosts = std::stoi(argv[3]);
 
     // the number of bytes that are sent in total per kernel
-    const uint64_t num_bytes = std::stoi(argv[4]);
+    const uint64_t num_bytes = std::stoul(argv[4]);
 
     // the maximum number of bytes that are sent with a single nvshmem put call (increases in powers of 2 starting at 1)
-    const uint64_t max_send_size = std::stoi(argv[5]);
+    const uint64_t max_send_size = std::stoul(argv[5]);
 
-    const uint64_t min_send_size = argc == 7 ? std::stoi(argv[6]) : 1;
+    const uint64_t min_send_size = argc == 7 ? std::stoul(argv[6]) : 1;
 
     if (min_send_size > max_send_size) {
         throw std::invalid_argument("min_send_size must be smaller than max_send_size");
@@ -83,15 +82,13 @@ int main(int argc, char *argv[]) {
     }
 
     if (num_bytes / (buffer_size) < 1) {
-        throw std::invalid_argument(
-                "num_bytes must be greater than grid_dim * block_dim * max_send_size (= " +
-                std::to_string(buffer_size) + ")");
+        throw std::invalid_argument("num_bytes must be greater than grid_dim * block_dim * max_send_size (= " +
+                                    std::to_string(buffer_size) + ")");
     }
 
     if (num_bytes % (buffer_size) != 0) {
-        throw std::invalid_argument(
-                "num_bytes must be a multiple of grid_dim * block_dim * max_send_size (= " +
-                std::to_string(buffer_size) + ")");
+        throw std::invalid_argument("num_bytes must be a multiple of grid_dim * block_dim * max_send_size (= " +
+                                    std::to_string(buffer_size) + ")");
     }
 
     nvshmem_init();
@@ -116,10 +113,14 @@ int main(int argc, char *argv[]) {
         const auto time_taken = time_kernel(generalized_benchmark, grid_dim, block_dim, 0, stream,
                                             data_source, data_sink, this_pe, num_bytes, message_size, max_send_size);
         if (this_pe == 0) {
-            std::cout << message_size
-                      << " bytes sized packages took " << time_taken.count()
-                      << " nanoseconds "
-                      << "(" << gb_per_sec(time_taken, num_bytes) << " GB/s)"
+            std::cout << "06_put_granularity"
+                      << "," << num_hosts
+                      << "," << num_bytes // total number of bytes sent, must be a multiple of max_send_size
+                      << "," << max_send_size // maximum size of a single send operation (with put nbi)
+                      << "," << message_size // size of a single send operation (with put nbi)
+                      << "," << grid_dim
+                      << "," << block_dim
+                      << "," << gb_per_sec(time_taken, num_bytes)
                       << std::endl;
         }
     }

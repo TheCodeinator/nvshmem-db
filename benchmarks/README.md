@@ -18,9 +18,9 @@ Extract dataframes from CSV files and plot them.
 
 The ansible playbooks in this directory may be used to setup and execute benchmarks on a cluster of machines.
 These playbooks are available:
-- `setup.yaml`: Setup the cluster for benchmarking.
-This copies all necessary source files to each node.
+- `sync.yaml`  : Sync the benchmarking code to each node.
 - `compile.yaml`: Compile the benchmarking code on each node.
+- `setup.yaml`: Set up the cluster for benchmarking. Runs `sync.yaml` and `compile.yaml`.
 - `bench.yaml` : Run the benchmarking code on each node.
 - `clean.yaml` : Remove all benchmarking code from each node.
 

@@ -3,57 +3,31 @@
 #include <unistd.h>
 #include <chrono>
 #include <cuda.h>
-#include <c++/10/array>
+#include <array>
+#include <vector>
 #include "nvshmem.h"
-#include "Meas.cuh"
+#include "NVSHMEMUtils.cuh"
 #include "Macros.cuh"
 
-constexpr long long MAX_SEND_SIZE{1024 * 1024 * 16};
-
-consteval size_t log2const(size_t n) {
-    return n == 1 ? 0 : 1 + log2const(n >> 1);
-}
+constexpr long long MAX_SEND_SIZE{1024 * 1024};
 
 // TODO: verify results make sense and benchmark code is bug-free
-// TODO: print in csv format
 
 // from 2 go up to the max packet size in exponential steps
 constexpr size_t N_TESTS{log2const(MAX_SEND_SIZE) + 1};
 
-enum SendState {
-    RUNNING = 0,
-    FINISHED = 1,
-};
-
-// list of message sizes to test
-// send with nbi pu tin loop with configurable iterations
-// nvshmem_quiet afterwards
-// record time for each message size
-
-__global__ void exchange_data(int this_pe,
-                              uint8_t *const data_src,
+__global__ void exchange_data(uint8_t *const data_src,
                               uint8_t *const data_dest,
-                              uint32_t *const flag,
-                              const uint64_t n_iterations,
-                              Meas *const meas_dev) {
-    const int other_pe = static_cast<int>(!this_pe); // there are two PEs in total
-    const uint32_t thread_global_id = blockIdx.x * blockDim.x + threadIdx.x;
-    const uint32_t thread_stride = blockDim.x * gridDim.y;
+                              const uint64_t n_bytes,
+                              const uint32_t msg_size) {
 
-
-    for (size_t test{0}; test < N_TESTS; ++test) {
-        // sync with other PE to make them start simultaneously
-        nvshmem_barrier_all();
-
-        meas_dev[test].start = clock64();
-
-        for (size_t i{0}; i < n_iterations; ++i) {
-            nvshmem_uint8_fcollect(NVSHMEM_TEAM_WORLD, data_dest, data_src, pow(2, test));
-        }
-
-        meas_dev[test].stop = clock64();
+    // send number of bytes in total, split up in batches of given message size
+    for (size_t i{0}; i < (n_bytes / msg_size); ++i) {
+        nvshmem_uint8_fcollect(NVSHMEM_TEAM_WORLD, data_dest, data_src, msg_size);
     }
 
+    // sync all PEs
+    nvshmem_barrier_all();
 }
 
 // TODO: use host to measure time since GPU clock frq. can change dynamically and is therefore not reliable
@@ -61,7 +35,7 @@ __global__ void exchange_data(int this_pe,
 /**
  * cmd arguments:
  * 0) program name (implicit)
- * 1) number of iterations
+ * 1) number of bytes to send per PE
  */
 int main(int argc, char *argv[]) {
     // init nvshmem
@@ -69,11 +43,9 @@ int main(int argc, char *argv[]) {
     cudaStream_t stream;
 
     assert(argc == 2);
-    const u_int64_t n_iterations = std::stoull(argv[1]);
-//    const u_int32_t grid_dim = stoi(argv[2]);
-//    const u_int32_t block_dim = stoi(argv[3]);
-    const u_int32_t grid_dim = 1;
-    const u_int32_t block_dim = 1;
+    const u_int64_t n_bytes = std::stoull(argv[1]);
+    constexpr u_int32_t grid_dim = 1;
+    constexpr u_int32_t block_dim = 1;
 
     nvshmem_init();
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
@@ -86,41 +58,28 @@ int main(int argc, char *argv[]) {
 
     // allocate symmetric device memory for sending/receiving the data
     auto *const data_src = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE));
+    // dest array has space for each PE's data
     auto *const data_dest = static_cast<uint8_t *>(nvshmem_malloc(MAX_SEND_SIZE * n_pes));
-    auto *const flag = static_cast<int *>(nvshmem_malloc(sizeof(uint32_t)));
 
-    // memory for storing the measurements and returning them from device to host
-    Meas meas_host[N_TESTS];
-    Meas *meas_dev;
-    cudaMalloc(&meas_dev, sizeof(Meas) * N_TESTS);
+    std::vector<std::pair<uint32_t, std::chrono::nanoseconds>> measurements{};
+    measurements.reserve(N_TESTS);
 
-    // call benchmarking kernel
-    void *args[] = {&this_pe,
-                    const_cast<uint8_t **>(&data_src),
-                    const_cast<uint8_t **>(&data_dest),
-                    const_cast<int **>(&flag),
-                    const_cast<uint64_t *>(&n_iterations),
-                    &meas_dev};
-    NVSHMEM_CHECK(
-            nvshmemx_collective_launch((const void *) exchange_data, grid_dim, block_dim, args, 1024 * 4, stream));
+    for (size_t test{0}; test < N_TESTS; ++test) {
+        const uint32_t msg_size = int_pow(2, test);
+        measurements.emplace_back(msg_size,
+                                  time_kernel(exchange_data, grid_dim, block_dim, 1024 * 4, stream,
+                                              data_src, data_dest, n_bytes, msg_size));
+    }
 
-    // wait for kernel to finish
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    // copy results to host
-    cudaMemcpy(meas_host, meas_dev, sizeof(Meas) * N_TESTS, cudaMemcpyDeviceToHost);
-
-    // deallocate all the memory that has been alocated
-    cudaFree(meas_dev);
+    // deallocate all the memory that has been allocated
     nvshmem_free(data_src);
     nvshmem_free(data_dest);
-    nvshmem_free(flag);
 
-    for (size_t i{0}; i < N_TESTS; ++i) {
-        usleep(this_pe * N_TESTS + i * 100);
-        // have send 2^i bytes in each iteation
-        std::cout << (this_pe == 0 ? "send" : "receive") << "_" << i << "(" << pow(2, i) << "B)" << ": "
-                  << meas_host[i].to_string(n_iterations * pow(2, i)) << std::endl;
+    if (this_pe == 0) {
+        for (const auto &meas: measurements) {
+            std::cout << "msg_size = " << meas.first << ", throughput = " << gb_per_sec(meas.second, n_bytes) << " GB/s"
+                      << std::endl;
+        }
     }
 
     // TODO: print results in suitable CSV format

@@ -2,8 +2,10 @@
   hosts: c01.lab.dm.informatik.tu-darmstadt.de
   vars:
     benchmarks:
-      - "01_put_coalescing"
+#      - "01_put_coalescing"
 #      - "02_shuffle"
+#      - "03_packet_size_put_nbi"
+      - "05_single_multi_launch"
   tasks:
     - name: Synchronize benchmark scripts
       synchronize:

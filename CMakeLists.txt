@@ -33,10 +33,12 @@ add_library(nvshmem ALIAS nvshmem::nvshmem)
 
 # add include directory to all subdirectories recursively
 include_directories(inc
+        librdmapp/rdmapp
         ${NVSHMEM_INCLUDE_DIR}
         ${CUDA_INCLUDE_DIR})
 
 add_subdirectory(src)
+add_subdirectory(librdmapp)
 
 # Only build tests and benchmarks if this is the top level cmake file i.e. we build this stand alone without user code
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
@@ -49,6 +51,7 @@ if (${CMAKE_BUILD_TYPE} STREQUAL "Debug")
     MESSAGE("Setting debug build options.")
 
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb -DDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -ggdb -DDEBUG -Wall -Wextra -Wconversion")
     add_compile_options( "$<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CUDA>>:-src-in-ptx;-lineinfo;-G>")
     add_compile_definitions(-DDEBUG)
 endif ()

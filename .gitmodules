@@ -1,0 +1,6 @@
+[submodule "librdmapp"]
+	path = librdmapp
+	url = https://github.com/TheCodeinator/librdmapp
+[submodule "distexprunner"]
+	path = distexprunner
+	url = https://github.com/mjasny/distexprunner

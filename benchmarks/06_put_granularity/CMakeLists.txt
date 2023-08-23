@@ -1,0 +1,6 @@
+project(bench_05_put_granularity LANGUAGES CXX CUDA)
+add_executable(bench_05_put_granularity put_granularity.cu)
+add_dependencies(bench_05_put_granularity nvshmem-db)
+target_link_libraries(bench_05_put_granularity nvshmem-db)
+set_property(TARGET bench_05_put_granularity PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(bench_05_put_granularity PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

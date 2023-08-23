@@ -2,3 +2,4 @@
 add_subdirectory(01_exampleTest)
 add_subdirectory(02_nvshmemHelloWorld)
 add_subdirectory(03_shuffleTest)
+#add_subdirectory(04_baselineTest)

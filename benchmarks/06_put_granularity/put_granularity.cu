@@ -13,9 +13,11 @@ __global__ void generalized_benchmark(uint8_t *data_source,
                                       uint8_t *data_sink,
                                       const int this_pe,
                                       const uint64_t count,
-                                      const uint64_t message_size) {
+                                      const uint64_t message_size,
+                                      const uint32_t data_separation) {
     const uint64_t thread_id = global_thread_id();
-    const uint64_t thread_offset = thread_id * message_size;
+    // leave gaps of data_separation between each threads's source array
+    const uint64_t thread_offset = thread_id * (message_size + data_separation);
 
     if (this_pe != 0 && thread_id == 0) {
         // wait to receive data from PE 0
@@ -52,7 +54,7 @@ __global__ void warmup() {
 int main(int argc, char *argv[]) {
     if (argc != 6 && argc != 7) {
         throw std::invalid_argument("Usage: " + std::string(argv[0]) +
-                                    " <grid_dims> <block_dims> <num_hosts> <count> <max_message_size> [<min_message_size>]");
+                                    " <grid_dims> <block_dims> <num_hosts> <data_separation> <count> <max_message_size> [<min_message_size>]");
     }
 
     int n_pes, this_pe;
@@ -61,20 +63,23 @@ int main(int argc, char *argv[]) {
     const uint32_t grid_dim = std::stoi(argv[1]);
     const uint32_t block_dim = std::stoi(argv[2]);
     const uint32_t num_hosts = std::stoi(argv[3]);
+    // gap in bytes in the source buffer for every individual message
+    const uint32_t data_separation = std::stoi(argv[4]);
 
     // the number of times that the message size is sent in total per kernel
-    const uint64_t count = std::stoul(argv[4]);
+    const uint64_t count = std::stoul(argv[5]);
 
     // the maximum number of bytes that are sent with a single nvshmem put call (increases in powers of 2 starting at 1)
-    const uint64_t max_message_size = std::stoul(argv[5]);
+    const uint64_t max_message_size = std::stoul(argv[6]);
 
-    const uint64_t min_message_size = argc == 7 ? std::stoul(argv[6]) : 1;
+    const uint64_t min_message_size = argc == 8 ? std::stoul(argv[7]) : 1;
 
     if (min_message_size > max_message_size) {
         throw std::invalid_argument("min_message_size must not be greater than max_message_size");
     }
 
-    const uint64_t buffer_size = grid_dim * block_dim * max_message_size;
+    // allocate one message for each thread and additionally the gaps in between
+    const uint64_t buffer_size = grid_dim * block_dim * max_message_size + (grid_dim * block_dim - 1) * data_separation;
 
     if (std::popcount(max_message_size) != 1) {
         throw std::invalid_argument("max_message_size must be a power of 2");
@@ -100,13 +105,14 @@ int main(int argc, char *argv[]) {
 
     for (uint64_t message_size = min_message_size; message_size <= max_message_size; message_size <<= 1) {
         const auto time_taken = time_kernel(generalized_benchmark, grid_dim, block_dim, 0, stream,
-                                            data_source, data_sink, this_pe, count, message_size);
+                                            data_source, data_sink, this_pe, count, message_size, data_separation);
         if (this_pe == 0) {
             uint64_t num_bytes = grid_dim * block_dim * message_size * count;
             std::cout << "06_put_granularity"
                       << "," << grid_dim
                       << "," << block_dim
                       << "," << num_hosts
+                      << "," << data_separation
                       << "," << count // number of times that the message size is sent in total per kernel
                       << "," << max_message_size
                       << "," << message_size // size of a single send operation (with put nbi)

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+n_pes=4
+
 max_send_size=8388608 # 8 MiB
 min_send_size=1
 
@@ -16,7 +18,7 @@ echo "type,grid_dim,block_dim,num_hosts,count,max_message_size,message_size,num_
 for grid in "${grids_list[@]}"; do
   for block in "${blocks_list[@]}"; do
     echo "Running with 1 host (2 PEs) NVLINK num_grids=$grid, num_blocks=$block"
-    nvshmrun -np 2 ./bench_08_sparse_sending_multi_pe $grid $block 0 $count $max_send_size $min_send_size>>$output_file
+    nvshmrun -np "${n_pes}" ./bench_08_sparse_sending_multi_pe $grid $block 0 $count $max_send_size $min_send_size>>$output_file
   done
 done
 
@@ -26,7 +28,7 @@ export NVSHMEM_DISABLE_P2P=true
 for grid in "${grids_list[@]}"; do
   for block in "${blocks_list[@]}"; do
     echo "Running with 1 host (2 PEs) NO NVLINK num_grids=$grid, num_blocks=$block"
-    nvshmrun -np 2 ./bench_08_sparse_sending_multi_pe $grid $block 1 $count $max_send_size $min_send_size>>$output_file
+    nvshmrun -np "${n_pes}" ./bench_08_sparse_sending_multi_pe $grid $block 1 $count $max_send_size $min_send_size>>$output_file
   done
 done
 

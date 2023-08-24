@@ -52,7 +52,7 @@ __global__ void warmup() {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 6 && argc != 7) {
+    if (argc != 7 && argc != 8) {
         throw std::invalid_argument("Usage: " + std::string(argv[0]) +
                                     " <grid_dims> <block_dims> <num_hosts> <data_separation> <count> <max_message_size> [<min_message_size>]");
     }

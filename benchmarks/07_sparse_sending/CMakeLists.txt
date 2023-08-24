@@ -1,6 +1,0 @@
-project(bench_07_sparse_sending LANGUAGES CXX CUDA)
-add_executable(bench_07_sparse_sending sparse_sending.cu)
-add_dependencies(bench_07_sparse_sending nvshmem-db)
-target_link_libraries(bench_07_sparse_sending nvshmem-db)
-set_property(TARGET bench_07_sparse_sending PROPERTY POSITION_INDEPENDENT_CODE ON)
-set_target_properties(bench_07_sparse_sending PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

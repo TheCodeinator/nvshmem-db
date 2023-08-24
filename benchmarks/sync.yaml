@@ -9,6 +9,7 @@
       - "05_single_multi_launch"
       - "06_put_granularity"
       - "07_sparse_sending"
+      - "08_sparse_sending_multi_pe"
   tasks:
     - name: Create project directory
       file:

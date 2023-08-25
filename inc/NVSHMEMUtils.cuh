@@ -2,15 +2,17 @@
 #define NVSHMEM_DB_NVSHMEMUTILS_CUH
 
 #include <chrono>
+#include "nvshmem.h"
 #include "Macros.cuh"
+#include "shuffle.h"
 
 /**
  * wrapper for nvshmem collective launch API using variadic template parameters
  */
 template<typename KernelFuncType, typename... Args>
 void collective_launch(KernelFuncType kernel_func,
-                       const uint32_t grid_dim,
-                       const uint32_t block_dim,
+                       const dim3 grid_dim,
+                       const dim3 block_dim,
                        const uint32_t shared_mem,
                        cudaStream_t cuda_stream,
                        const Args &... args) {
@@ -51,11 +53,11 @@ void collective_launch(KernelFuncType kernel_func,
  */
 template<typename KernelFuncType, typename... Args>
 std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
-                                      const uint32_t grid_dim,
-                                      const uint32_t block_dim,
-                                      const uint32_t shared_mem,
-                                      cudaStream_t cuda_stream,
-                                      Args &&... args) {
+                                     const dim3 grid_dim,
+                                     const dim3 block_dim,
+                                     const uint32_t shared_mem,
+                                     cudaStream_t cuda_stream,
+                                     Args &&... args) {
     using namespace std::chrono;
 
     auto time_start = steady_clock::now();
@@ -66,6 +68,19 @@ std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
     CUDA_CHECK(cudaStreamSynchronize(cuda_stream));
 
     return duration_cast<nanoseconds>(steady_clock::now() - time_start);
+}
+
+template<typename T>
+__device__ void fucking_fcollect(nvshmem_team_t team, T *dest, const T *src, const size_t nelem)
+{
+    const auto pe_count = nvshmem_team_n_pes(team);
+    const auto my_pe = nvshmem_team_my_pe(team);
+    for(uint32_t pe = 0; pe < pe_count; ++pe) {
+        //printf("PE %d, sending %llu elements of size %llu to %lu (dest: %p, src: %p)\n", nvshmem_team_my_pe(team), nelem, sizeof(T), pe, dest + (my_pe * nelem), src);
+        nvshmem_putmem_nbi(dest + (my_pe * nelem), src, nelem * sizeof(T), pe);
+    }
+    nvshmem_quiet();
+    nvshmem_barrier_all();
 }
 
 template<typename Rep, typename Period>

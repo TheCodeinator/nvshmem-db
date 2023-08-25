@@ -4,6 +4,8 @@
 
 #include "shuffle_data.h"
 
+#include "NVSHMEMUtils.cuh"
+
 enum class OffsetMode {
     ATOMIC_INCREMENT,
     SYNC_FREE
@@ -45,7 +47,7 @@ __device__ void histLocalAtomic(const uint32_t tid,
         const uint32_t dest = distribute(tuplePtr, data->keyOffset, data->peCount);
 
         // increment corresponding index in compute_offsets
-        atomicAdd(hist + dest, 1);
+        const auto offsetOld = atomicAdd(hist + dest, 1);
         // increment the count for this thread for the current batch and destination (translate it to the offset later)
         ++(*data->threadOffsets.getOffset(i / data->threadOffsets.tuplePerBatch, tid, dest));
     }
@@ -158,8 +160,26 @@ __global__ void compute_offsets(
     // compute local histogram for this PE
     histLocalAtomic<offsetMode>(tid, data->tuples, thisPe, localHistogram, data);
 
+    for(int dest = 0; dest < data->peCount; ++dest) {
+        if(tid == 0) {
+            printf("PE %d: localHistogram[%d] = %d\n", thisPe, dest, localHistogram[dest]);
+        }
+    }
+
     // TODO: alltoall doesn't work, but fcollect does?
-    assert(nvshmem_uint32_fcollect(team, globalHistograms, localHistogram, data->peCount) == 0);
+    if(tid == 0) {
+        //assert(nvshmem_uint32_fcollect(team, globalHistograms, localHistogram, data->peCount) == 0); // not working!
+        fucking_fcollect(team, globalHistograms, localHistogram, data->peCount);
+    }
+
+
+
+    __syncthreads();
+    for(int dest = 0; dest < data->peCount * data->peCount; ++dest) {
+        if(tid == 0) {
+            printf("PE %d: globalHistogram[%d, %d] = %d\n", thisPe, dest / data->peCount, dest % data->peCount, globalHistograms[dest]);
+        }
+    }
 
 #ifndef NDEBUG
     if (tid == 0) {
@@ -171,6 +191,7 @@ __global__ void compute_offsets(
     // compute offsets based on globalHistograms
     offsetsFromHistograms(tid, data->peCount, thisPe, globalHistograms, offsets);
 
+#ifndef NDEBUG
     // print offsets
     if (tid == 0) {
         printf("(Remote) offsets for PE %d: ", thisPe);
@@ -179,6 +200,7 @@ __global__ void compute_offsets(
         }
         printf("\n");
     }
+#endif
 
     // compute max output partition size (max value of histogram sums)
     offsetsResult->maxPartitionSize = maxPartitionSize(globalHistograms, data->peCount);
@@ -186,10 +208,12 @@ __global__ void compute_offsets(
     // compute size of this partition
     offsetsResult->thisPartitionSize = thisPartitionSize(globalHistograms, data->peCount, thisPe);
 
+#ifndef NDEBUG
     if (tid == 0) {
         printf("PE %d: maxPartitionSize = %d, thisPartitionSize = %d\n", thisPe, offsetsResult->maxPartitionSize,
                offsetsResult->thisPartitionSize);
     }
+#endif
 }
 
 
@@ -272,6 +296,7 @@ __global__ void shuffle_with_offset(const nvshmem_team_t team,
             } else {
                 assert(false);
             }
+
             if constexpr(sendBufferMode == SendBufferMode::USE_BUFFER) {
                 assert(offset < data->sendBufferSizeInTuples); // assert that offset is not out of bounds
 #ifndef NDEBUG
@@ -280,8 +305,7 @@ __global__ void shuffle_with_offset(const nvshmem_team_t team,
                        data->sendBuffers.currentBufferIndex());
 #endif
                 // copy tuple to buffer
-                memcpy(data->sendBuffers.currentBuffer() +
-                       (dest * data->sendBufferSize + offset * data->tupleSize), // to dest-th buffer with offset position
+                memcpy(data->sendBuffers.currentBuffer() + dest * data->sendBufferSize + offset * data->tupleSize, // to dest-th buffer with offset position
                        tuplePtr,
                        data->tupleSize);
             } else if constexpr(sendBufferMode == SendBufferMode::NO_BUFFER) {
@@ -300,7 +324,6 @@ __global__ void shuffle_with_offset(const nvshmem_team_t team,
 
         // if there might be a full buffer or tuple count reached, send data out
         // We do not track all buffersComp individually, because we can only await all async operations at once anyways
-        //printf("PE: %d, offset: %d\n", thisPe, offset);
         if constexpr(sendBufferMode == SendBufferMode::USE_BUFFER) {
             if(++iteration % iterationToSend == 0 || i + (data->threadCount - tid) >= data->tupleCount) {
                 nvshmem_quiet(); // wait for previous send to be completed => buffersBackup reusable after quiet finishes
@@ -365,18 +388,22 @@ __host__ ShuffleResult shuffle(
         const cudaStream_t &stream,
         nvshmem_team_t team) {
 
+
+    const dim3 gridDimension = dim3(1, 1, 1);
+    const dim3 blockDimension = dim3(120, 1, 1);
+    const uint32_t threadCount = gridDimension.x * gridDimension.y * gridDimension.z * blockDimension.x * blockDimension.y * blockDimension.z;
+
     int nPes = nvshmem_team_n_pes(team);
     int thisPe = nvshmem_team_my_pe(team);
     size_t globalHistogramsSize = nPes * nPes * sizeof(uint32_t);
     constexpr auto offsetMode = OffsetMode::SYNC_FREE;
-    constexpr auto sendBufferMode = SendBufferMode::NO_BUFFER;
-    uint32_t sendBufferSizeMultiplier = 30;
+    constexpr uint32_t sendBufferSizeMultiplier = 10;
+    constexpr auto sendBufferMode = sendBufferSizeMultiplier > 0 ? SendBufferMode::USE_BUFFER : SendBufferMode::NO_BUFFER;
 
     printf("PE %d: shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,
            keyOffset);
 
-    const auto blockDimension = dim3(2, 2, 1);
-    ShuffleData hostShuffleData(localData, nPes, blockDimension.x*blockDimension.y*blockDimension.z, tupleCount, tupleSize, keyOffset, sendBufferSizeMultiplier);
+    ShuffleData hostShuffleData(localData, nPes, threadCount, tupleCount, tupleSize, keyOffset, sendBufferSizeMultiplier);
     if constexpr(sendBufferMode == SendBufferMode::USE_BUFFER) {
         assert(hostShuffleData.threadCount <= hostShuffleData.sendBufferSizeInTuples && hostShuffleData.sendBufferSizeInTuples % hostShuffleData.threadCount == 0); // buffer size must be a multiple of thread count for buffer maybe full asumption to send out data
     }
@@ -400,12 +427,15 @@ __host__ ShuffleResult shuffle(
     ComputeOffsetsResult offsetsResult{};
     ComputeOffsetsResult *offsetsResultDevice;
     CUDA_CHECK(cudaMalloc(&offsetsResultDevice, sizeof(ComputeOffsetsResult)));
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the globalHistograms and compute the offsets for remote writing
-    void *comp_offset_args[] = {&team, &thisPe, &localHistogram,
-                                &globalHistograms, &offsets, &offsetsResultDevice, &deviceShuffleData};
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) compute_offsets<offsetMode>, 1, blockDimension, comp_offset_args, 1024 * 4, stream));
+    //void *comp_offset_args[] = {&team, &thisPe, &localHistogram,
+    //                            &globalHistograms, &offsets, &offsetsResultDevice, &deviceShuffleData};
+    //NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) compute_offsets<offsetMode>, gridDimension, blockDimension, comp_offset_args, 1024 * 4, stream));
+    const auto histogramMeasurement = time_kernel(compute_offsets<offsetMode>, gridDimension, blockDimension, 1024 * 4, stream,
+                                                  team, thisPe, localHistogram, globalHistograms, offsets, offsetsResultDevice, deviceShuffleData);
 
     // wait for kernel to finish and deliver result
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -422,9 +452,6 @@ __host__ ShuffleResult shuffle(
            thisPe, offsetsResult.maxPartitionSize * tupleSize, offsetsResult.maxPartitionSize);
     auto *const symmMem = static_cast<uint8_t *>(nvshmem_malloc(offsetsResult.maxPartitionSize * tupleSize));
 
-    void *shuffleArgs[] = {&team, &thisPe, &offsets,
-                           const_cast<uint8_t **>(&symmMem), &deviceShuffleData};
-
     printf("Calling shuffleWithOffsets with %d PEs\n", nPes);
 
     if constexpr(sendBufferMode == SendBufferMode::NO_BUFFER) {
@@ -432,7 +459,12 @@ __host__ ShuffleResult shuffle(
     }
 
     // execute the shuffle on the GPU
-    NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffle_with_offset<offsetMode, sendBufferMode>, 1, hostShuffleData.threadCount, shuffleArgs, 1024 * 4, stream));
+    //void *shuffleArgs[] = {&team, &thisPe, &offsets,
+    //                       const_cast<uint8_t **>(&symmMem), &deviceShuffleData};
+    //NVSHMEM_CHECK(nvshmemx_collective_launch((const void *) shuffle_with_offset<offsetMode, sendBufferMode>, gridDimension, blockDimension, shuffleArgs, 1024 * 4, stream));
+    const auto shuffleMeasurement = time_kernel(shuffle_with_offset<offsetMode, sendBufferMode>, gridDimension, blockDimension, 1024 * 4, stream,
+                                                team, thisPe, offsets, symmMem, deviceShuffleData);
+
     CUDA_CHECK(cudaDeviceSynchronize()); // wait for kernel to finish and deliver result
     nvshmem_barrier(team); // wait for all send operations to finish
 
@@ -448,6 +480,8 @@ __host__ ShuffleResult shuffle(
         }
         nvshmem_barrier(team);
     }
+
+    printf("PE %d: shuffle GB/s: %f\n", thisPe, gb_per_sec(shuffleMeasurement, tupleCount * tupleSize));
 
     ShuffleResult result{};
     result.partitionSize = offsetsResult.thisPartitionSize;

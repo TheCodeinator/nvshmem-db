@@ -8,6 +8,11 @@ __host__ SendBuffers::SendBuffers(ShuffleData *data) :
         buffers = static_cast<uint8_t*>(nvshmem_malloc(bufferCount * data->sendBufferSize * data->peCount * sizeof(uint8_t)));
 
     uint offsetBufferSize = bufferCount * data->peCount * sizeof(uint32_t);
+
+#ifndef NDEBUG
+    printf("SendBuffers: bufferCount=%u, sendBufferSize=%u, offsetBufferSize=%u\n", bufferCount, data->sendBufferSize, offsetBufferSize);
+#endif
+
     CUDA_CHECK(cudaMalloc(&offsets, offsetBufferSize));
     CUDA_CHECK(cudaMemset(offsets, 0, offsetBufferSize));
 }
@@ -55,10 +60,13 @@ __device__ void SendBuffers::resetBuffer(uint bufferIndex)
 
 __host__ ThreadOffsets::ThreadOffsets(ShuffleData *data) :
         data(data),
-        tuplePerBatch(data->sendBufferSizeInTuples),
-        batchCount(ceil(static_cast<double>(data->tupleCount) / data->sendBufferSizeInTuples))
+        tuplePerBatch(data->sendBufferSizeInTuples > 0 ? data->sendBufferSizeInTuples : data->tupleCount),
+        batchCount(ceil(static_cast<double>(data->tupleCount) / tuplePerBatch))
 {
-    CUDA_CHECK(cudaMalloc(&offsets, batchCount * data->peCount * data->threadCount));
+#ifndef NDEBUG
+    printf("ThreadOffsets: tuplePerBatch=%u, batchCount=%u\n", tuplePerBatch, batchCount);
+#endif
+    CUDA_CHECK(cudaMalloc(&offsets, batchCount * data->peCount * data->threadCount * sizeof(uint32_t)));
 }
 __host__ ThreadOffsets::~ThreadOffsets()
 {
@@ -69,6 +77,7 @@ __device__ uint32_t *ThreadOffsets::getOffset(uint32_t batch, uint32_t thread, u
 {
     auto batchOffset = batch * data->peCount * data->threadCount;
     auto threadOffset = thread * data->peCount;
+    assert(batchOffset + threadOffset + pe < batchCount * data->peCount * data->threadCount);
     return offsets + batchOffset + threadOffset + pe;
 }
 
@@ -88,8 +97,10 @@ __host__ ShuffleData::ShuffleData(const uint8_t *const tuples, uint32_t peCount,
         sendBuffers(SendBuffers(this)),
         threadOffsets(ThreadOffsets(this))
 {
-    //printf("ShuffleData: peCount=%u, threadCount=%u, tupleCount=%lu, tupleSize=%u, keyOffset=%u, sendBufferSizeMultiplier=%u, sendBuffersizeInTuples=%u, sendBufferSize=%u\n",
-    //       peCount, threadCount, tupleCount, tupleSize, keyOffset, sendBufferSizeMultiplier, sendBufferSizeInTuples, sendBufferSize);
+#ifndef NDEBUG
+    printf("ShuffleData: peCount=%u, threadCount=%u, tupleCount=%lu, tupleSize=%u, keyOffset=%u, sendBufferSizeMultiplier=%u, sendBuffersizeInTuples=%u, sendBufferSize=%u\n",
+           peCount, threadCount, tupleCount, tupleSize, keyOffset, sendBufferSizeMultiplier, sendBufferSizeInTuples, sendBufferSize);
+#endif
 }
 __host__ ShuffleData::~ShuffleData() = default;
 

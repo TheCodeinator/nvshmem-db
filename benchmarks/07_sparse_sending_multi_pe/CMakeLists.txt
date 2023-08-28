@@ -1,5 +1,5 @@
 project(bench_07_sparse_sending_multi_pe LANGUAGES CXX CUDA)
-add_executable(bench_07_sparse_sending_multi_pe sparse_sending.cu)
+add_executable(bench_07_sparse_sending_multi_pe sparse_sending_multi_pe.cu)
 add_dependencies(bench_07_sparse_sending_multi_pe nvshmem-db)
 target_link_libraries(bench_07_sparse_sending_multi_pe nvshmem-db)
 set_property(TARGET bench_07_sparse_sending_multi_pe PROPERTY POSITION_INDEPENDENT_CODE ON)

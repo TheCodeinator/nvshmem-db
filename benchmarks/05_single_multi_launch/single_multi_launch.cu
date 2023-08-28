@@ -50,6 +50,8 @@ int main(int argc, char* argv[]){
     CUDA_CHECK(cudaStreamCreate(&stream1));
     CUDA_CHECK(cudaStreamCreate(&stream2));
 
+    std:cout << "Cuda stream setup" << std::endl;
+
     // get nvshmem environment information
     nvshmem_init();
     uint32_t this_pe, other_pe, n_pes;
@@ -89,6 +91,8 @@ int main(int argc, char* argv[]){
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
     rdma::Connection* conn = server.connect_to(ips[other_pe],rdma_port);
+
+    std::cout << "RDMA memory registered" << std::endl;
 
     // Warm up CUDA context
 

@@ -51,10 +51,10 @@ void collective_launch(KernelFuncType kernel_func,
  * @param cuda_stream cuda stream passed to nvshmem_collective_launch
  * @param args const references arguments to pass to the kernel function
  */
-template<typename KernelFuncType, typename... Args>
+template<typename KernelFuncType, typename grid_dim_t, typename block_dim_t, typename... Args>
 std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
-                                     const dim3 grid_dim,
-                                     const dim3 block_dim,
+                                     const grid_dim_t grid_dim,
+                                     const block_dim_t block_dim,
                                      const uint32_t shared_mem,
                                      cudaStream_t cuda_stream,
                                      Args &&... args) {
@@ -66,6 +66,7 @@ std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
 
     // wait for kernel to finish
     CUDA_CHECK(cudaStreamSynchronize(cuda_stream));
+    nvshmem_barrier_all();
 
     return duration_cast<nanoseconds>(steady_clock::now() - time_start);
 }

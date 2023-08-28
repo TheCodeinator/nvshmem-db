@@ -47,11 +47,13 @@ create_tuple_result create_all_local_tuples(const uint64_t tuples_per_pe) {
         for (int j = 0; j < tuples_per_pe; ++j) {
             tuple_ids[j] = j + i;
         }
+#ifndef NDEBUG
         printf("PE %d has tuple ids: ", i);
         for (int j = 0; j < tuples_per_pe; ++j) {
             printf("%lu ", tuple_ids[j]);
         }
         printf("\n");
+#endif
         tuples[i] = create_tuples(tuple_ids, tuples_per_pe);
         num_tuples[i] = tuples_per_pe;
     }
@@ -87,7 +89,9 @@ void call_shuffle(cudaStream_t &stream, shuffle_tuple **local_tuples, uint64_t *
     int thisPe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
     int nPes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
 
+#ifndef NDEBUG
     printGPUTuples<<<1, 1, 0, stream>>>(local_tuples[thisPe], num_tuples[thisPe], thisPe);
+#endif
 
     // shuffle data
     const ShuffleResult result =
@@ -109,7 +113,7 @@ int main() {
     cudaSetDevice(nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE));
     cudaStreamCreate(&stream);
 
-    constexpr uint64_t tuples_per_pe = 100;
+    constexpr uint64_t tuples_per_pe = 5000000;
     const create_tuple_result tuple_result = create_all_local_tuples(tuples_per_pe);
     call_shuffle(stream, tuple_result.tuples, tuple_result.num_tuples, tuples_per_pe);
 

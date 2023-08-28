@@ -160,25 +160,10 @@ __global__ void compute_offsets(
     // compute local histogram for this PE
     histLocalAtomic<offsetMode>(tid, data->tuples, thisPe, localHistogram, data);
 
-    for(int dest = 0; dest < data->peCount; ++dest) {
-        if(tid == 0) {
-            printf("PE %d: localHistogram[%d] = %d\n", thisPe, dest, localHistogram[dest]);
-        }
-    }
-
     // TODO: alltoall doesn't work, but fcollect does?
     if(tid == 0) {
         //assert(nvshmem_uint32_fcollect(team, globalHistograms, localHistogram, data->peCount) == 0); // not working!
         fucking_fcollect(team, globalHistograms, localHistogram, data->peCount);
-    }
-
-
-
-    __syncthreads();
-    for(int dest = 0; dest < data->peCount * data->peCount; ++dest) {
-        if(tid == 0) {
-            printf("PE %d: globalHistogram[%d, %d] = %d\n", thisPe, dest / data->peCount, dest % data->peCount, globalHistograms[dest]);
-        }
     }
 
 #ifndef NDEBUG
@@ -355,9 +340,11 @@ __global__ void print_tuple_result(const uint32_t thisPe, const uint8_t *const d
                                    const uint64_t tupleCount) {
     // print only the ID of the tuple
     printf("PE %d result (%lu tuples): ", thisPe, tupleCount);
+#ifndef NDEBUG
     for (uint64_t i{0}; i < tupleCount; ++i) {
         printf("%lu ", reinterpret_cast<const uint64_t *>(data)[i * 8]);
     }
+#endif
     printf("\n");
 }
 
@@ -389,15 +376,15 @@ __host__ ShuffleResult shuffle(
         nvshmem_team_t team) {
 
 
-    const dim3 gridDimension = dim3(1, 1, 1);
-    const dim3 blockDimension = dim3(120, 1, 1);
-    const uint32_t threadCount = gridDimension.x * gridDimension.y * gridDimension.z * blockDimension.x * blockDimension.y * blockDimension.z;
+    const auto gridDimension = 10;
+    const auto blockDimension = 1024;
+    const uint32_t threadCount = blockDimension * gridDimension;
 
     int nPes = nvshmem_team_n_pes(team);
     int thisPe = nvshmem_team_my_pe(team);
     size_t globalHistogramsSize = nPes * nPes * sizeof(uint32_t);
     constexpr auto offsetMode = OffsetMode::SYNC_FREE;
-    constexpr uint32_t sendBufferSizeMultiplier = 10;
+    constexpr uint32_t sendBufferSizeMultiplier = 100;
     constexpr auto sendBufferMode = sendBufferSizeMultiplier > 0 ? SendBufferMode::USE_BUFFER : SendBufferMode::NO_BUFFER;
 
     printf("PE %d: shuffle with tupleSize = %d, tupleCount = %lu, keyOffset = %d\n", thisPe, tupleSize, tupleCount,

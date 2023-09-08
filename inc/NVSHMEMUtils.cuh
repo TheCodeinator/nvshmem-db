@@ -4,7 +4,14 @@
 #include <chrono>
 #include "nvshmem.h"
 #include "Macros.cuh"
-#include "shuffle.h"
+
+inline __device__ uint32_t global_thread_id() {
+    return blockIdx.x * blockDim.x + threadIdx.x;
+}
+
+inline __device__ uint32_t global_thread_count() {
+    return gridDim.x * blockDim.x;
+}
 
 /**
  * wrapper for nvshmem collective launch API using variadic template parameters

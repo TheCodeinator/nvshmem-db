@@ -27,6 +27,16 @@
         }                                                                                  \
     } while (0)
 
+
+/**
+ * distribution function mapping keys to node IDs.
+ * Currently modulo. Could be anything instead
+ */
+__device__ inline uint32_t distribute(const uint8_t *const tuple, const uint32_t keyOffset, const uint32_t nPes) {
+    // assuming a 4-byte integer key
+    return *reinterpret_cast<const uint32_t *>(tuple + keyOffset) % nPes;
+}
+
 struct ShuffleResult {
     uint8_t *tuples;
     uint64_t partitionSize;

@@ -8,6 +8,7 @@
       - "04_packet_size_fcollect"
       - "05_single_multi_launch"
       - "06_put_granularity"
+      - "08_tuple_scan"
   tasks:
     - name: Create project directory
       file:

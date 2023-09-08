@@ -72,13 +72,13 @@ int main(int argc, char* argv[]){
 
     constexpr uint32_t rdma_port = 5000;
 
-    uint32_t * in = {};
-    cudaMalloc((void**)in, 2*size_in*sizeof(uint32_t));
-    cudaMemset(in, 1, size_in*sizeof(uint32_t));
+    uint32_t * in;
+    CUDA_CHECK(cudaMalloc((void**)in, 2*size_in*sizeof(uint32_t)));
+    CUDA_CHECK(cudaMemset(in, 1, size_in*sizeof(uint32_t)));
 
     size_t size_buff = 4096;
-    uint32_t * buff = {};
-    cudaMalloc((void**)buff, size_buff*sizeof(uint32_t));
+    uint32_t * buff;
+    CUDA_CHECK(cudaMalloc((void**)buff, size_buff*sizeof(uint32_t)));
     uint32_t * sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(size_buff*sizeof(uint32_t)));
 
     // Make RDMA connection

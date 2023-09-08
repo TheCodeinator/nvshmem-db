@@ -45,11 +45,6 @@ int main(int argc, char* argv[]){
     const std::string ip1 = argv[2];
     const std::string ip2 = argv[3];
 
-    // create cuda streams for alternating in new kernel launches
-    cudaStream_t stream1, stream2;
-    CUDA_CHECK(cudaStreamCreate(&stream1));
-    CUDA_CHECK(cudaStreamCreate(&stream2));
-
     std:cout << "Cuda stream setup" << std::endl;
 
     // get nvshmem environment information
@@ -57,14 +52,19 @@ int main(int argc, char* argv[]){
     uint32_t this_pe, other_pe, n_pes;
 
     this_pe = nvshmem_team_my_pe(NVSHMEM_TEAM_WORLD);
-
     n_pes = nvshmem_team_n_pes(NVSHMEM_TEAM_WORLD);
-
     other_pe = 1 - this_pe;
 
     if (n_pes != 2) {
         throw std::logic_error("This test has to be started with exactly 2 PEs.");
     }
+
+    CUDA_CHECK(cudaSetDevice(this_pe));
+
+    // create cuda streams for alternating in new kernel launches
+    cudaStream_t stream1, stream2;
+    CUDA_CHECK(cudaStreamCreate(&stream1));
+    CUDA_CHECK(cudaStreamCreate(&stream2));
 
     // rdma environment information
     std::vector<std::string> ips {ip1, ip2};

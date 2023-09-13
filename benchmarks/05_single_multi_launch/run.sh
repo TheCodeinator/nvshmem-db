@@ -13,5 +13,6 @@ echo "type,num_bytes,launches,time_nvshmem,time_rdma" > $output_file
 
 for size in "${input_size[@]}"; do
   echo "Running for input size $size"
-  nvshmrun -np 2 ./bench_05_single_multi_launch "$size" 172.18.94.10 172.18.94.11 > $output_file
+  # for each node x ip for ib y is 172.18.94.xy
+  nvshmrun -n 2 -ppn 1 -hosts 10.0.2.11 ./bench_05_single_multi_launch "$size" 172.18.94.10 172.18.94.20 > $output_file
 done

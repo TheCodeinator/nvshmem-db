@@ -70,31 +70,38 @@ int main(int argc, char* argv[]){
     CUDA_CHECK(cudaStreamCreate(&stream2));
 
     // rdma environment information
-    std::vector<std::string> ips {ip1, ip2};
-    string my_ip = ips[this_pe];
+    std::string my_ip = argv[2+this_pe];
+    std::string other_ip = argv[2+other_pe];
 
-    constexpr uint32_t rdma_port = 5000;
+    constexpr uint32_t rdma_port = 5432;
 
     uint32_t * in;
-    CUDA_CHECK(cudaMalloc((void**)in, 2*size_in*sizeof(uint32_t)));
+    CUDA_CHECK(cudaMalloc((void**)&in, size_in*sizeof(uint32_t)));
     CUDA_CHECK(cudaMemset(in, 1, size_in*sizeof(uint32_t)));
 
     size_t size_buff = 4096;
-    uint32_t * buff;
-    CUDA_CHECK(cudaMalloc((void**)buff, size_buff*sizeof(uint32_t)));
-    uint32_t * sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(size_buff*sizeof(uint32_t)));
+    uint32_t * buff1;
+    uint32_t * buff2;
+    CUDA_CHECK(cudaMalloc((void**)&buff1, 2*size_buff*sizeof(uint32_t)));
+    CUDA_CHECK(cudaMalloc((void**)&buff2, 2*size_buff*sizeof(uint32_t)));
+
+    uint32_t * sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(size_in*sizeof(uint32_t)));
 
     // Make RDMA connection
     rdma::RDMA server {my_ip, rdma_port};
 
     // register RDMA memory
-    server.register_memory(in, size_buff*sizeof(uint32_t));
+    // memory region1
+    server.register_memory(buff1, 2*size_buff*sizeof(uint32_t));
+    // memory region2
+    server.register_memory(buff2, 2*size_buff*sizeof(uint32_t));
+
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
     // wait for discovery
     sleep(1);
 
-    rdma::Connection* conn = server.connect_to(ips[other_pe],rdma_port);
+    rdma::Connection* conn = server.connect_to(other_ip,rdma_port);
 
     // Warm up CUDA context
     calculate<<<1,1>>>(in, buff, size_buff);
@@ -113,19 +120,21 @@ int main(int argc, char* argv[]){
 
 
     for(auto i{0}; i<size_in; i+=2*size_buff){
-        calculate<<<1,1,0,stream1>>>(in+i, buff, size_buff);
+        calculate<<<1,1,0,stream1>>>(in+i, buff1, size_buff);
         cudaStreamSynchronize(stream1);
-        conn->write(in+i,
+        conn->write(buff1,
                     size_buff*sizeof(uint32_t),
-                    size_in*sizeof(uint32_t)+i*sizeof(uint32_t),
-                    rdma::Flags().signaled());
+                    size_buff*sizeof(uint32_t),
+                    rdma::Flags().signaled(),
+                    0);
         if(i!=0) conn->sync_signaled(1);
-        calculate<<<1,1,0,stream2>>>(in+i+size_buff, buff, size_buff);
+        calculate<<<1,1,0,stream2>>>(in+i+size_buff, buff2, size_buff);
         cudaStreamSynchronize(stream2);
-        conn->write(in+i+size_buff,
+        conn->write(buff2,
                     size_buff*sizeof(uint32_t),
-                    size_in*sizeof(uint32_t)+i*sizeof(uint32_t)+size_buff*sizeof(uint32_t),
-                    rdma::Flags().signaled());
+                    size_buff*sizeof(uint32_t),
+                    rdma::Flags().signaled(),
+                    1);
         conn->sync_signaled(1);
     }
 

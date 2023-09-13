@@ -104,11 +104,11 @@ int main(int argc, char* argv[]){
     rdma::Connection* conn = server.connect_to(other_ip,rdma_port);
 
     // Warm up CUDA context
-    calculate<<<1,1>>>(in, buff, size_buff);
+    calculate<<<1,1>>>(in, buff1, size_buff);
 
     auto start = std::chrono::steady_clock::now();
 
-    time_kernel(calculate_and_send, 1, 1, size_buff, stream1, in, buff, size_in, size_buff, sym_mem, this_pe);
+    time_kernel(calculate_and_send, 1, 1, size_buff, stream1, in, buff1, size_in, size_buff, sym_mem, this_pe);
     cudaStreamSynchronize(stream1);
 
     auto stop = std::chrono::steady_clock::now();

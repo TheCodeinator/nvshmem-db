@@ -91,6 +91,9 @@ int main(int argc, char* argv[]){
     server.register_memory(in, size_buff*sizeof(uint32_t));
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
+    // wait for discovery
+    sleep(1);
+
     rdma::Connection* conn = server.connect_to(ips[other_pe],rdma_port);
 
     // Warm up CUDA context
@@ -129,6 +132,8 @@ int main(int argc, char* argv[]){
     // wait till all writes are finished
     conn->sync_signaled();
     auto stop2 = std::chrono::steady_clock::now();
+
+    server.close(conn);
 
     auto dur2 = stop2-start2;
     auto t_ms2 = dur.count()*1e-6;

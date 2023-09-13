@@ -34,18 +34,21 @@ __global__ void calculate_and_send(const uint32_t* in, uint32_t* buff, uint32_t 
         nvshmem_uint32_put_nbi(sym_mem, in+off, size_buf, 1-this_pe);
 
     }
+
+    // Exit upon completion of all put calls
     nvshmem_quiet();
 }
 
-
+// args:
+// size in bytes to send
+// ip of NIC 1
+// ip of NIC 2
 int main(int argc, char* argv[]){
 
     assert(argc == 4);
     const size_t size_in = std::stoull(argv[1]);
     const std::string ip1 = argv[2];
     const std::string ip2 = argv[3];
-
-    std:cout << "Cuda stream setup" << std::endl;
 
     // get nvshmem environment information
     nvshmem_init();
@@ -82,20 +85,15 @@ int main(int argc, char* argv[]){
     uint32_t * sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(size_buff*sizeof(uint32_t)));
 
     // Make RDMA connection
-
     rdma::RDMA server {my_ip, rdma_port};
 
     // register RDMA memory
-
     server.register_memory(in, size_buff*sizeof(uint32_t));
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
     rdma::Connection* conn = server.connect_to(ips[other_pe],rdma_port);
 
-    std::cout << "RDMA memory registered" << std::endl;
-
     // Warm up CUDA context
-
     calculate<<<1,1>>>(in, buff, size_buff);
 
     auto start = std::chrono::steady_clock::now();
@@ -143,5 +141,4 @@ int main(int argc, char* argv[]){
     nvshmem_finalize();
 
     return EXIT_SUCCESS;
-
 }

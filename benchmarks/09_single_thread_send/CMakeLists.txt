@@ -1,0 +1,6 @@
+project(bench_09_single_thread_send LANGUAGES CXX CUDA)
+add_executable(bench_09_single_thread_send single_thread_send.cu)
+add_dependencies(bench_09_single_thread_send nvshmem-db)
+target_link_libraries(bench_09_single_thread_send nvshmem-db)
+set_property(TARGET bench_09_single_thread_send PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(bench_09_single_thread_send PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

@@ -9,6 +9,5 @@ echo "type,bytes_per_send,bandwidth" > $output_file
 
 for size in "${bytes_per_send[@]}"; do
   echo "Running for input size $size"
-  # for each node x ip for ib y is 172.18.94.xy
   nvshmrun -n 2 -ppn 1 --hosts 10.0.2.11,10.0.2.12 ./bench_09_single_thread_send "$size" > $output_file
 done

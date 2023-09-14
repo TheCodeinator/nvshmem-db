@@ -31,7 +31,7 @@ __global__ void calculate_and_send(const uint32_t* in, uint32_t size_in,
         // Compute capability >= 7.0 (V100)
         __nanosleep(1e9);
         memcpy(sym_mem+off,in+off,size_buff*sizeof(uint32_t));
-        nvshmem_uint32_put_nbi(sym_mem, sym_mem+size_in+off, size_buff, 1-this_pe);
+        nvshmem_uint32_put_nbi(sym_mem+off, sym_mem+size_in+off, size_buff, 1-this_pe);
 
     }
 

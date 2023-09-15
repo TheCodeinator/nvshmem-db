@@ -16,22 +16,22 @@ struct create_tuple_result {
 // configuration for this shuffle example
 constexpr uint8_t KEY_OFFSET = 0; // key is first item in shuffle_tuple
 
-// creates local tuples in device memory
+// creates local device_tuples in device memory
 shuffle_tuple *create_tuples(uint64_t *tuple_ids, size_t num_tuples) {
     size_t localMemSize = num_tuples * sizeof(shuffle_tuple);
-    // allocate memory for tuples on host
+    // allocate memory for device_tuples on host
     auto *localTuplesCPU = static_cast<shuffle_tuple *>(malloc(localMemSize));
 
-    // fill in ids of the tuples as ascending integers with an offset depending on the PE_id
+    // fill in ids of the device_tuples as ascending integers with an offset depending on the PE_id
     for (size_t i{0}; i < num_tuples; ++i) {
         localTuplesCPU[i].id = tuple_ids[i];
     }
 
-    // allocate device memory for the local tuples
+    // allocate device memory for the local device_tuples
     shuffle_tuple *localTuplesGPU;
     CUDA_CHECK(cudaMalloc(&localTuplesGPU, num_tuples * sizeof(shuffle_tuple)));
 
-    // copy tuples to device memory
+    // copy device_tuples to device memory
     CUDA_CHECK(cudaMemcpy(localTuplesGPU, localTuplesCPU, localMemSize, cudaMemcpyHostToDevice));
 
     // free CPU memory
@@ -71,7 +71,7 @@ void call_shuffle(cudaStream_t &stream, shuffle_tuple **local_tuples, uint64_t *
                 KEY_OFFSET, stream, NVSHMEM_TEAM_WORLD);
 
     for (uint64_t i{0}; i < result.partitionSize; ++i) {
-        // modulo of received tuples should be this PE's ID
+        // modulo of received device_tuples should be this PE's ID
         assert(reinterpret_cast<uint64_t *>(result.tuples)[i * 8 + KEY_OFFSET] % nPes == thisPe);
     }
 }

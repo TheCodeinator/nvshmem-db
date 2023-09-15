@@ -16,7 +16,9 @@ __global__ void calculate(const uint32_t * in, uint32_t * buff, size_t size_buff
 
     //c.f. calculate_and_send
     __nanosleep(1e9);
-    memcpy(buff, in, size_buff*sizeof(uint32_t));
+    for(uint32_t i{0}; i < size_buff; i++){
+        buff[i] = in[i];
+    }
 
 }
 
@@ -30,11 +32,12 @@ __global__ void calculate_and_send(const uint32_t* in, uint32_t size_in,
 
         // Compute capability >= 7.0 (V100)
         __nanosleep(1e9);
-        memcpy(sym_mem+off,in+off,size_buff*sizeof(uint32_t));
+        for(uint32_t i{0}; i < size_buff; i++){
+            sym_mem[off+i] = in[off+i];
+        }
         nvshmem_uint32_put_nbi(sym_mem+off, sym_mem+size_in+off, size_buff, 1-this_pe);
 
     }
-
     // Exit upon completion of all put calls
     nvshmem_quiet();
 }
@@ -92,6 +95,14 @@ int main(int argc, char* argv[]){
 
     uint32_t * sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(2*size_in*sizeof(uint32_t)));
 
+    // Warm up CUDA context
+    calculate<<<1,1>>>(in, buff, size_buff);
+
+    auto dur = time_kernel(calculate_and_send, 1, 1, size_buff, stream1,
+                           in, size_in, size_buff, sym_mem, this_pe);
+
+    auto t_ms = dur.count()*1e-6;
+
     // Make RDMA connection
     rdma::RDMA server {my_ip, rdma_port};
 
@@ -108,17 +119,11 @@ int main(int argc, char* argv[]){
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
     // wait for discovery
-    sleep(10);
+    sleep(1);
+
+    std::cout << my_ip << " on socket " << server.numa_socket << " trying to connect to " << other_ip << std::endl;
 
     rdma::Connection* conn = server.connect_to(other_ip,rdma_port);
-
-    // Warm up CUDA context
-    calculate<<<1,1>>>(in, buff, size_buff);
-
-    auto dur = time_kernel(calculate_and_send, 1, 1, size_buff, stream1,
-                in, size_in, size_buff, sym_mem, this_pe);
-
-    auto t_ms = dur.count()*1e-6;
 
     auto start2 = std::chrono::steady_clock::now();
 

@@ -94,7 +94,9 @@ __device__ void fucking_fcollect(nvshmem_team_t team, T *dest, const T *src, con
 template<typename Rep, typename Period>
 double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes) {
     using namespace std::chrono;
-    return static_cast<double>(bytes) / duration_cast<nanoseconds>(time).count();
+    // the ratio of 1024^3 / 1000^3 which we have to use to convert bytes / nanosecond to GB/s
+    constexpr double conversion_factor = 1.073741824,
+    return (static_cast<double>(bytes) / duration_cast<nanoseconds>(time).count()) / conversion_factor;
 };
 
 consteval size_t log2const(size_t n) {

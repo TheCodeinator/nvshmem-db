@@ -1,7 +1,7 @@
 ############################################################
 # Our library
 ############################################################
-add_library(nvshmem-db shuffle.cu shuffle_data.cu shuffle_data_tmp.cu)
+add_library(nvshmem-db shuffle.cu)
 
 target_link_libraries(nvshmem-db PRIVATE nvshmem)
 target_include_directories(nvshmem-db PUBLIC ${CMAKE_SOURCE_DIR}/inc)

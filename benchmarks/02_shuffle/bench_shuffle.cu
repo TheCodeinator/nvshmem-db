@@ -2,6 +2,7 @@
 #include <chrono>
 #include <fstream>
 #include "shuffle.h"
+#include "NVSHMEMUtils.cuh"
 
 struct shuffle_tuple {
     uint64_t id;

@@ -95,7 +95,7 @@ template<typename Rep, typename Period>
 double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes) {
     using namespace std::chrono;
     // the ratio of 1024^3 / 1000^3 which we have to use to convert bytes / nanosecond to GB/s
-    constexpr double conversion_factor = 1.073741824,
+    constexpr double conversion_factor = 1.073741824;
     return (static_cast<double>(bytes) / duration_cast<nanoseconds>(time).count()) / conversion_factor;
 };
 

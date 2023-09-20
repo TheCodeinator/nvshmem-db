@@ -125,13 +125,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Listening on " << my_ip << ":" << rdma_port << " with NIC on socket " << server.numa_socket
               << std::endl;
 
-    // wait for discovery
-    sleep(10);
-
-    std::cout << my_ip << " on socket " << server.numa_socket << " trying to connect to " << other_ip << std::endl;
-
-        std::chrono::steady_clock::time_point start2;
-        std::chrono::steady_clock::time_point stop2;
+    std::chrono::steady_clock::time_point start2;
+    std::chrono::steady_clock::time_point stop2;
 
     {
         rdma::RDMA client{my_ip, 666};

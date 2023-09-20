@@ -8,7 +8,6 @@
 #include "rdma.hpp"
 #include "Macros.cuh"
 #include "NVSHMEMUtils.cuh"
-#include "my_asserts.hpp"
 
 /*
     Emulate calculation of sending destination and writing in output buffer
@@ -83,7 +82,8 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMalloc((void **) &in, size_in * sizeof(uint32_t)));
     CUDA_CHECK(cudaMemset(in, 1, size_in * sizeof(uint32_t)));
 
-    size_t size_buff = 4096;
+    // num of values in buffer -> corresponds to 4mb
+    size_t size_buff = 1024*1024;
 
     // for use with multiple memory regions
     //uint32_t * buff1;
@@ -110,8 +110,6 @@ int main(int argc, char *argv[]) {
     // Make RDMA connection
     rdma::RDMA server{my_ip, rdma_port};
 
-    // register RDMA memory
-
     // not yet supported
     // memory region1
     //server.register_memory(buff1, 2*size_buff*sizeof(uint32_t));
@@ -124,6 +122,8 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Listening on " << my_ip << ":" << rdma_port << " with NIC on socket " << server.numa_socket
               << std::endl;
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     std::chrono::steady_clock::time_point start2;
     std::chrono::steady_clock::time_point stop2;
@@ -140,7 +140,6 @@ int main(int argc, char *argv[]) {
 
         // mr_id only important with buff in different memory regions
         for (auto i{0}; i < size_in; i += 2 * size_buff) {
-            std::cout << my_ip << " " << i << std::endl;
             calculate<<<1, 1, 0, stream1>>>(in + i, buff, size_buff);
             cudaStreamSynchronize(stream1);
             conn->write(buff,
@@ -176,7 +175,9 @@ int main(int argc, char *argv[]) {
 
     auto num_launches = size_in / size_buff;
 
-    std::cout << "05_single_multi_launch" << "," << size_in << "," << num_launches << "," << t_ms << "," << t_ms2
+    // size in has to be multiplied since we are sending uint32
+    std::cout << "05_single_multi_launch" << "," << size_in * sizeof(uint32_t) << "," << size_buff * sizeof(uint32_t) <<
+              ","  << num_launches << "," << t_ms << "," << t_ms2
               << std::endl;
 
     nvshmem_free(sym_mem);

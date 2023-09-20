@@ -115,7 +115,9 @@ int main(int argc, char *argv[]) {
     // memory region2
     //server.register_memory(buff2, 2*size_buff*sizeof(uint32_t));
 
-    server.register_memory(buff, 4 * size_buff * sizeof(uint32_t));
+    const int size = 4 * size_buff * sizeof(uint32_t);
+
+    server.register_memory(buff, size);
 
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
@@ -132,11 +134,8 @@ int main(int argc, char *argv[]) {
 
     {
         rdma::RDMA client{my_ip, rdma_port};
-        const int size = 4 * size_buff * sizeof(uint32_t);
-//        void *mem = malloc(size);
-        void* mem;
-        CUDA_CHECK(cudaMalloc(&mem, 4 * size_buff * sizeof(uint32_t)));
-        client.register_memory(mem, size); // use std::span?
+
+        client.register_memory(buff, size);
 
         rdma::Connection *conn = client.connect_to(other_ip, rdma_port);
         std::cout << "Start " << my_ip << std::endl;

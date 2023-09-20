@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
     // Warm up CUDA context
     calculate<<<1, 1>>>(in, buff, size_buff);
 
-    auto dur = time_kernel(calculate_and_send, 1, 1, size_buff, stream1,
+    auto dur = time_kernel(calculate_and_send, 1, 1, 2 * size_in * sizeof(uint32_t), stream1,
                            in, size_in, size_buff, sym_mem, this_pe);
 
     auto t_ms = dur.count() * 1e-6;

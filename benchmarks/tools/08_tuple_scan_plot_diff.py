@@ -25,13 +25,16 @@ norm = plt.Normalize(vmin=min_throughput, vmax=max_throughput)
 colors = cm.viridis(norm(filtered_data['throughput_gb_s']))
 
 # Create the 3D plot with adjusted figure size
-fig = plt.figure(figsize=(10, 8))  # Adjust the figure size as needed
+fig = plt.figure(figsize=(12, 10))  # Adjust the figure size as needed
 ax = fig.add_subplot(111, projection='3d')
 
 # Set axis labels
-ax.set_xlabel('Block Dim')
-ax.set_ylabel('Grid Dim')
-ax.set_zlabel('Throughput GB/s')
+ax.set_xlabel('Block Dim', fontsize=18, labelpad=15)
+ax.set_ylabel('Grid Dim', fontsize=18, labelpad=15)
+ax.set_zlabel('Throughput GB/s', fontsize=18, labelpad=15)
+
+# Set tick label font size
+ax.tick_params(axis='both', which='major', labelsize=16)
 
 # Create a grid of block_dim and grid_dim values
 block_dim_values = filtered_data['block_dim'].unique()
@@ -46,7 +49,7 @@ plane = ax.plot_surface(block_dim_mesh, grid_dim_mesh, throughput_gb_s_mesh,
                         cmap='viridis', facecolors=cm.viridis(norm(throughput_gb_s_mesh)))
 
 # Set the title
-plt.title('Diff: Atomic Increment - Sync-free')
+plt.title('Diff: Atomic Increment - Sync-free', fontsize=20)
 
 # Show the plot
 plt.show()

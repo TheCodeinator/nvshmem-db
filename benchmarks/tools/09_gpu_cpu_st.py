@@ -12,17 +12,18 @@ nvshmem_data = data[data['is_gpu'] == 1]
 # Create a new column with log2(message_size)
 data['log2_message_size'] = np.log2(data['message_size'])
 
-# Create the plot
-plt.figure(figsize=(10, 6))
+# Create the plot with larger font sizes and line widths
+plt.figure(figsize=(12, 8))  # Increase the figure size
+plt.rcParams.update({'font.size': 23})  # Increase the font size
 
 # Round message_size to the nearest power of 2
 rounded_message_sizes = [2**int(np.round(np.log2(size))) for size in cpu_data['message_size']]
 
-# Plot CPU-driven data
-plt.semilogx(rounded_message_sizes, cpu_data['throughput'], label='CPU-driven', color='blue', marker='o')
+# Plot CPU-driven data with thicker lines
+plt.semilogx(rounded_message_sizes, cpu_data['throughput'], label='GPUDirect', color='blue', marker='o', linewidth=3)
 
-# Plot nvshmem data
-plt.semilogx(rounded_message_sizes, nvshmem_data['throughput'], label='nvshmem', color='red', marker='s')
+# Plot nvshmem data with thicker lines
+plt.semilogx(rounded_message_sizes, nvshmem_data['throughput'], label='NVSHMEM', color='red', marker='s', linewidth=3)
 
 # Set x-axis labels as powers of 2 bytes, MB, or GB
 x_tick_locations = np.unique(rounded_message_sizes)
@@ -39,12 +40,15 @@ for size in x_tick_locations:
 plt.xticks(x_tick_locations, labels=x_labels, rotation=45)
 
 # Set axis labels and legend
-plt.xlabel('Message Size')
-plt.ylabel('Throughput')
-plt.legend()
+plt.xlabel('Message Size', fontsize=25)
+plt.ylabel('Throughput', fontsize=25)
+plt.legend(fontsize=25)
 
-# Show the plot
-plt.grid(True)
-plt.title('Throughput Comparison')
+# Show the plot with a thicker grid
+plt.grid(True, linewidth=1.2)
+
+# Set a larger title font size
+plt.title('Throughput Comparison', fontsize=30)
+
 plt.tight_layout()
 plt.show()

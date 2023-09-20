@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
     std::string my_ip = argv[2 + this_pe];
     std::string other_ip = argv[2 + other_pe];
 
-    constexpr uint32_t rdma_port = 5432;
+    constexpr uint32_t rdma_port = 7777;
 
     uint32_t *in;
     CUDA_CHECK(cudaMalloc((void **) &in, size_in * sizeof(uint32_t)));
@@ -90,9 +90,12 @@ int main(int argc, char *argv[]) {
     //uint32_t * buff2;
     //CUDA_CHECK(cudaMalloc((void**)&buff1, 2*size_buff*sizeof(uint32_t)));
     //CUDA_CHECK(cudaMalloc((void**)&buff2, 2*size_buff*sizeof(uint32_t)));
+    const uint32_t size = 4 * size_buff * sizeof(uint32_t);
 
     uint32_t *buff;
-    CUDA_CHECK(cudaMalloc((void **) &buff, 4 * size_buff * sizeof(uint32_t)));
+    uint32_t *rcv_buff;
+    CUDA_CHECK(cudaMalloc((void **) &buff, size));
+    CUDA_CHECK(cudaMalloc((void **) &rcv_buff, size));
 
     uint32_t *sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(2 * size_in * sizeof(uint32_t)));
 
@@ -115,9 +118,7 @@ int main(int argc, char *argv[]) {
     // memory region2
     //server.register_memory(buff2, 2*size_buff*sizeof(uint32_t));
 
-    const int size = 4 * size_buff * sizeof(uint32_t);
-
-    server.register_memory(buff, size);
+    server.register_memory(rcv_buff, size);
 
     server.listen(rdma::RDMA::CLOSE_AFTER_LAST | rdma::RDMA::IN_BACKGROUND);
 
@@ -133,7 +134,7 @@ int main(int argc, char *argv[]) {
         std::chrono::steady_clock::time_point stop2;
 
     {
-        rdma::RDMA client{my_ip, rdma_port};
+        rdma::RDMA client{my_ip, 666};
 
         client.register_memory(buff, size);
 

@@ -8,6 +8,7 @@
 #include "rdma.hpp"
 #include "Macros.cuh"
 #include "NVSHMEMUtils.cuh"
+#include "my_asserts.hpp"
 
 /*
     Emulate calculation of sending destination and writing in output buffer
@@ -126,38 +127,52 @@ int main(int argc, char *argv[]) {
 
     std::cout << my_ip << " on socket " << server.numa_socket << " trying to connect to " << other_ip << std::endl;
 
-    rdma::Connection *conn = server.connect_to(other_ip, rdma_port);
+        std::chrono::steady_clock::time_point start2;
+        std::chrono::steady_clock::time_point stop2;
 
-    std::cout << "Start " << my_ip << std::endl;
+    {
+        rdma::RDMA client{my_ip, rdma_port};
+        const int size = 4 * size_buff * sizeof(uint32_t);
+//        void *mem = malloc(size);
+        void* mem;
+        CUDA_CHECK(cudaMalloc(&mem, 4 * size_buff * sizeof(uint32_t)));
+        client.register_memory(mem, size); // use std::span?
 
-    auto start2 = std::chrono::steady_clock::now();
+        rdma::Connection *conn = client.connect_to(other_ip, rdma_port);
+        std::cout << "Start " << my_ip << std::endl;
 
-    // mr_id only important with buff in different memory regions
-    for (auto i{0}; i < size_in; i += 2 * size_buff) {
-        std::cout << my_ip << " " << i << std::endl;
-        calculate<<<1, 1, 0, stream1>>>(in + i, buff, size_buff);
-        cudaStreamSynchronize(stream1);
-        conn->write(buff,
-                    size_buff * sizeof(uint32_t),
-                    2 * size_buff * sizeof(uint32_t),
-                    rdma::Flags().signaled(),
-                    0);
-        if (i != 0) { conn->sync_signaled(1); }
-        calculate<<<1, 1, 0, stream2>>>(in + i + size_buff, buff + size_buff, size_buff);
-        cudaStreamSynchronize(stream2);
-        conn->write(buff + size_buff,
-                    size_buff * sizeof(uint32_t),
-                    3 * size_buff * sizeof(uint32_t),
-                    rdma::Flags().signaled(),
-                    0);
-        conn->sync_signaled(1);
+        start2 = std::chrono::steady_clock::now();
+
+        // mr_id only important with buff in different memory regions
+        for (auto i{0}; i < size_in; i += 2 * size_buff) {
+            std::cout << my_ip << " " << i << std::endl;
+            calculate<<<1, 1, 0, stream1>>>(in + i, buff, size_buff);
+            cudaStreamSynchronize(stream1);
+            conn->write(buff,
+                        size_buff * sizeof(uint32_t),
+                        2 * size_buff * sizeof(uint32_t),
+                        rdma::Flags().signaled(),
+                        0);
+            if (i != 0) { conn->sync_signaled(1); }
+            calculate<<<1, 1, 0, stream2>>>(in + i + size_buff, buff + size_buff, size_buff);
+            cudaStreamSynchronize(stream2);
+            conn->write(buff + size_buff,
+                        size_buff * sizeof(uint32_t),
+                        3 * size_buff * sizeof(uint32_t),
+                        rdma::Flags().signaled(),
+                        0);
+            conn->sync_signaled(1);
+        }
+
+        // wait till all writes are finished
+        conn->sync_signaled();
+        stop2 = std::chrono::steady_clock::now();
+
+        client.close(conn);
+
     }
 
-    // wait till all writes are finished
-    conn->sync_signaled();
-    auto stop2 = std::chrono::steady_clock::now();
-
-    server.close(conn);
+    server.wait();
 
     std::cout << "Stop " << my_ip << std::endl;
 

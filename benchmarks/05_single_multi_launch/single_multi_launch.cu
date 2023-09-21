@@ -15,7 +15,6 @@
 __global__ void calculate(const uint32_t *in, uint32_t *buff, size_t size_buff) {
 
     //c.f. calculate_and_send
-    __nanosleep(1e9);
     for (uint32_t i{0}; i < size_buff; i++) {
         buff[i] = in[i];
     }
@@ -31,7 +30,6 @@ __global__ void calculate_and_send(const uint32_t *in, uint32_t size_in,
     for (uint32_t off{0}; off < size_in; off += size_buff) {
 
         // Compute capability >= 7.0 (V100)
-        __nanosleep(1e9);
         for (uint32_t i{0}; i < size_buff; i++) {
             sym_mem[off + i] = in[off + i];
         }
@@ -148,7 +146,7 @@ int main(int argc, char *argv[]) {
                         2 * size_buff * sizeof(uint32_t),
                         rdma::Flags().signaled(),
                         0);
-            if (i != 0) { conn->sync_signaled(1); }
+            conn->sync_signaled();
             calculate<<<1, 1, 0, stream2>>>(in + i + size_buff, buff + size_buff, size_buff);
             cudaStreamSynchronize(stream2);
             conn->write(buff + size_buff,
@@ -156,11 +154,9 @@ int main(int argc, char *argv[]) {
                         3 * size_buff * sizeof(uint32_t),
                         rdma::Flags().signaled(),
                         0);
-            conn->sync_signaled(1);
+            conn->sync_signaled();
         }
-
         // wait till all writes are finished
-        conn->sync_signaled();
         stop2 = std::chrono::steady_clock::now();
 
         client.close(conn);

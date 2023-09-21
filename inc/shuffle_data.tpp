@@ -14,6 +14,14 @@ struct Tuple{
 };
 
 template<typename Tuple>
+__global__ void generate_tuples(Tuple *tuples, uint64_t tuple_count, uint64_t start_key, uint64_t key_stride) {
+    const uint32_t thread_count = global_thread_count();
+    for(decltype(Tuple::key) i = global_thread_id(); i < tuple_count; i += thread_count) {
+        tuples[i].key = start_key + (i * key_stride);
+    }
+}
+
+template<typename Tuple>
 struct ShuffleData {
     ShuffleData *host_data = nullptr;
     ShuffleData *device_data = nullptr;
@@ -24,9 +32,9 @@ struct ShuffleData {
 
     const uint32_t grid_dim;
     const uint32_t block_dim;
-    const uint32_t thread_count;
 
     const uint64_t tuple_count;
+    const uint64_t tuple_per_block;
     const uint32_t tuple_size;
 
     const uint32_t send_buffer_size_in_tuples;
@@ -42,8 +50,8 @@ struct ShuffleData {
             pe_count(pe_count),
             grid_dim(grid_dim),
             block_dim(block_dim),
-            thread_count(grid_dim * block_dim),
             tuple_count(tuple_count),
+            tuple_per_block((tuple_count / grid_dim) + (tuple_count % grid_dim != 0)),
             tuple_size(sizeof(Tuple)),
             send_buffer_size_in_tuples(block_dim * send_buffer_size_multiplier),
             send_buffer_size_in_bytes(send_buffer_size_in_tuples * tuple_size),
@@ -84,7 +92,7 @@ public:
     const uint32_t buffer_count = 2;
 
 private:
-    uint32_t buffer_in_use = 0;
+    uint32_t *buffer_in_use = nullptr;
 
     const ShuffleData<Tuple> *device_data = nullptr;
 
@@ -97,11 +105,15 @@ public:
             device_data(host_data->device_data)
     {
         if(host_data->allocate_send_buffer)
-            buffers = static_cast<Tuple*>(nvshmem_malloc(buffer_count * host_data->grid_dim * host_data->send_buffer_size_in_tuples * sizeof(Tuple) * host_data->pe_count));
+            buffers = static_cast<Tuple*>(nvshmem_malloc(host_data->grid_dim * buffer_count * host_data->send_buffer_size_in_tuples * sizeof(Tuple) * host_data->pe_count));
 
-        uint32_t offset_buffer_size = buffer_count * host_data->pe_count * host_data->grid_dim * sizeof(uint32_t);
+        uint32_t offset_buffer_size = host_data->grid_dim * buffer_count * host_data->pe_count * sizeof(uint32_t);
         CUDA_CHECK(cudaMalloc(&offsets, offset_buffer_size));
         CUDA_CHECK(cudaMemset(offsets, 0, offset_buffer_size));
+
+        uint32_t buffer_in_use_size = host_data->grid_dim * sizeof(uint32_t);
+        CUDA_CHECK(cudaMalloc(&buffer_in_use, buffer_in_use_size));
+        CUDA_CHECK(cudaMemset(buffer_in_use, 0, buffer_in_use_size));
 
         CUDA_CHECK(cudaMalloc(&device_buffers, sizeof(SendBuffers)));
         CUDA_CHECK(cudaMemcpy(device_buffers, this, sizeof(SendBuffers), cudaMemcpyHostToDevice));
@@ -111,39 +123,45 @@ public:
     __host__ ~SendBuffers() {
         nvshmem_free(buffers);
         CUDA_CHECK(cudaFree(offsets));
-        //CUDA_CHECK(cudaFree(buffer_in_use));
         CUDA_CHECK(cudaFree(device_buffers));
     }
 
     __host__ __device__ SendBuffers &operator=(const SendBuffers &other) = delete;
     __host__ __device__ SendBuffers &operator=(SendBuffers &&other) = delete;
 
-    __device__ uint32_t currentBufferIndex() const { return buffer_in_use; }
+    __device__ uint32_t currentBufferIndex(uint32_t block_id) const { return buffer_in_use[block_id]; }
 
-    __device__ Tuple *getBuffer(uint32_t bufferIndex) {
-        return buffers + bufferIndex * device_data->send_buffer_size_in_tuples * device_data->pe_count;
+    __device__ Tuple *getBuffer(uint32_t buffer_index, uint32_t block_id) {
+        const auto block_offset = block_id * buffer_count * device_data->send_buffer_size_in_tuples * device_data->pe_count;
+        const auto buffer_offset = buffer_index * device_data->send_buffer_size_in_tuples * device_data->pe_count;
+        return buffers + block_offset + buffer_offset;
     }
-    __device__ Tuple *currentBuffer() { return getBuffer(buffer_in_use); }
+    __device__ Tuple *currentBuffer(uint32_t block_id) { return getBuffer(buffer_in_use[block_id], block_id); }
 
-    __device__ uint32_t *getOffsets(uint32_t bufferIndex) {
-        return offsets + bufferIndex * device_data->pe_count;
+    __device__ uint32_t *getOffsets(uint32_t bufferIndex, uint32_t block_id) {
+        const auto block_offset = block_id * buffer_count * device_data->pe_count;
+        const auto buffer_offset = bufferIndex * device_data->pe_count;
+        return offsets + block_offset + buffer_offset;
     }
-    __device__ uint32_t *currentOffsets() { return getOffsets(buffer_in_use); }
+    __device__ uint32_t *currentOffsets(uint32_t block_id) { return getOffsets(buffer_in_use[block_id], block_id); }
 
     /**
      * increase the Buffer index by one (or reset to 0 if last buffer reached) and return the old buffer index
      * @return the buffer index that was used before this call
      */
-    __device__ uint32_t useNextBuffer() {
-        uint32_t old_buffer_in_use = buffer_in_use;
-        buffer_in_use = (old_buffer_in_use + 1) % buffer_count;
+    __device__ uint32_t useNextBuffer(uint32_t block_id) {
+        uint32_t old_buffer_in_use = buffer_in_use[block_id];
+        buffer_in_use[block_id] = (old_buffer_in_use + 1) % buffer_count;
         return old_buffer_in_use;
     }
     /**
      * Resets the offsets of the given bufferIndex to 0
      */
-    __device__ void resetBuffer(uint bufferIndex) {
-        memset(getOffsets(bufferIndex), 0, device_data->pe_count * sizeof(uint32_t));
+    __device__ void resetBuffer(uint bufferIndex, uint32_t block_id) {
+        memset(getOffsets(bufferIndex, block_id), 0, device_data->pe_count * sizeof(uint32_t));
+    }
+    __device__ void resetCurrentBuffer(uint32_t block_id) {
+        resetBuffer(buffer_in_use[block_id], block_id);
     }
 };
 
@@ -157,13 +175,13 @@ public:
 private:
     ShuffleData<Tuple> *device_data = nullptr;
 
-    uint32_t *offsets = nullptr;
+    uint16_t *offsets = nullptr;
 
 public:
     __host__ explicit ThreadOffsets(const ShuffleData<Tuple> *host_data)  :
             device_data(host_data->device_data)
     {
-        const auto offsets_size = host_data->batch_count * host_data->pe_count * host_data->thread_count * sizeof(uint32_t);
+        const auto offsets_size = host_data->grid_dim * host_data->block_dim * host_data->batch_count * host_data->pe_count * sizeof(uint16_t);
         CUDA_CHECK(cudaMalloc(&offsets, offsets_size));
         CUDA_CHECK(cudaMemset(offsets, 0, offsets_size));
 
@@ -180,11 +198,12 @@ public:
     __host__ __device__ ThreadOffsets &operator=(const ThreadOffsets &other) = delete;
     __host__ __device__ ThreadOffsets &operator=(ThreadOffsets &&other) = delete;
 
-    __device__ uint32_t *getOffset(uint32_t batch, uint32_t thread, uint32_t pe) {
-        auto batch_offset = batch * device_data->pe_count * device_data->thread_count;
-        auto thread_offset = thread * device_data->pe_count;
-        assert(batch_offset + thread_offset + pe < device_data->batch_count * device_data->pe_count * device_data->thread_count);
-        return offsets + batch_offset + thread_offset + pe;
+    __device__ uint16_t *getOffset(uint32_t batch, uint32_t block, uint32_t thread, uint32_t pe) {
+        const auto block_offset = block * device_data->batch_count * device_data->pe_count * device_data->block_dim;
+        const auto thread_offset = thread * device_data->batch_count * device_data->pe_count;
+        const auto batch_offset = batch * device_data->pe_count;
+        assert(block_offset + thread_offset + batch_offset + pe < device_data->grid_dim * device_data->block_dim * device_data->batch_count * device_data->pe_count);
+        return offsets + block_offset + thread_offset + batch_offset + pe;
     }
 };
 

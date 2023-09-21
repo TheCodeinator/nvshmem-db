@@ -12,36 +12,28 @@
 
 template<typename Tuple>
 __global__ void build_thread_offsets(const ShuffleData<Tuple> *data, ThreadOffsets<Tuple> *offsets) {
-    const uint32_t thread_id = global_thread_id();
+    const uint64_t tuple_offset = blockIdx.x * data->tuple_per_block;
+    uint64_t max_i = (tuple_offset + data->tuple_per_block < data->tuple_count) ? data->tuple_per_block : llmax(0, static_cast<int64_t>(data->tuple_count) - tuple_offset);
 
-    for (uint32_t i = thread_id; i < data->tuple_count; i += data->thread_count) {
-        const Tuple &tuple = data->device_tuples[i];
+    for(uint64_t i = threadIdx.x; i < max_i; i += blockDim.x) {
+        const Tuple &tuple = data->device_tuples[tuple_offset + i];
         const uint32_t dest = distribute(tuple.key, data->pe_count);
 
         // increment the count for this thread for the current batch and destination (translate it to the offset later)
-        ++(*offsets->getOffset(i / data->send_buffer_size_in_tuples, thread_id, dest));
+        ++(*offsets->getOffset(i / data->send_buffer_size_in_tuples, blockIdx.x, threadIdx.x, dest));
     }
+    __syncthreads();
 
-    for (uint32_t i = thread_id; i < data->batch_count * data->pe_count; i += data->thread_count) {
+    for (uint32_t i = threadIdx.x; i < data->batch_count * data->pe_count; i += blockDim.x) {
         uint32_t batch = i / data->pe_count;
         uint32_t dest = i % data->pe_count;
-        uint32_t currentOffset = 0;
-        for (uint32_t thread = 0; thread < data->thread_count; ++thread) {
-            uint32_t *offset = offsets->getOffset(batch, thread, dest);
-            uint32_t tmp = *offset;
+        uint16_t currentOffset = 0;
+        for (uint32_t thread = 0; thread < blockDim.x; ++thread) {
+            uint16_t *offset = offsets->getOffset(batch, blockIdx.x, thread, dest);
+            uint16_t tmp = *offset;
             *offset = currentOffset;
             currentOffset += tmp;
         }
-    }
-}
-
-template<typename Tuple>
-__global__ void generate_tuples(uint64_t tuple_size, uint64_t tuple_count, Tuple *tuples) {
-    const uint32_t thread_id = global_thread_id();
-    const uint32_t thread_count = global_thread_count();
-
-    for(decltype(Tuple::key) i = thread_id; i < tuple_count; i += thread_count) {
-        tuples[i].key = i;
     }
 }
 
@@ -50,30 +42,30 @@ __global__ void tuple_scan(ShuffleData<Tuple> *data, SendBuffers<Tuple> *buffers
     if(data == nullptr || buffers == nullptr || offsets == nullptr)
         return;
 
-    const uint32_t thread_id = global_thread_id();
-
-    const uint iteration_to_send = data->send_buffer_size_in_tuples / data->thread_count;
+    const uint iteration_to_send = data->send_buffer_size_in_tuples / blockDim.x;
     uint iteration = 0;
 
-    const uint max_index = data->thread_count * static_cast<uint32_t>(ceil(static_cast<double>(data->tuple_count) / data->thread_count));
-    for(uint64_t i = thread_id; i < max_index; i += data->thread_count) {
-        if (i < data->tuple_count) {
-            const Tuple &tuple = data->device_tuples[i];
+    const uint64_t tuple_offset = blockIdx.x * data->tuple_per_block;
+
+    for(uint64_t i = threadIdx.x; i < data->tuple_per_block; i += blockDim.x) {
+        const uint64_t tuple_index = tuple_offset + i;
+        if (tuple_index < data->tuple_count) {
+            const Tuple &tuple = data->device_tuples[tuple_index];
             const uint dest = distribute(tuple.key, data->pe_count);
 
             uint32_t offset;
             if constexpr(offset_mode == OffsetMode::SYNC_FREE) {
-                auto thread_offset = offsets->getOffset(i / data->send_buffer_size_in_tuples, thread_id, dest);
+                auto thread_offset = offsets->getOffset(i / data->send_buffer_size_in_tuples, blockIdx.x, threadIdx.x, dest);
                 offset = *thread_offset;
                 *thread_offset += 1;
             } else if constexpr(offset_mode == OffsetMode::ATOMIC_INCREMENT) {
                 // increment the offset for this destination atomically (atomicAdd returns the value before increment)
-                offset = atomicAdd(buffers->currentOffsets() + dest, 1);
+                offset = atomicAdd(buffers->currentOffsets(blockIdx.x) + dest, 1);
             } else {
                 assert(false);
             }
 
-            buffers->currentBuffer()[dest * data->send_buffer_size_in_tuples + offset] = tuple;
+            buffers->currentBuffer(blockIdx.x)[dest * data->send_buffer_size_in_tuples + offset] = tuple;
             //memcpy(buffers->currentBuffer() + dest * data->send_buffer_size_in_bytes +
             //       offset * data->tuple_size, // to dest-th buffer with offset position
             //       tuple,
@@ -81,16 +73,17 @@ __global__ void tuple_scan(ShuffleData<Tuple> *data, SendBuffers<Tuple> *buffers
 
         }
 
-        if(++iteration % iteration_to_send == 0 || i + (data->thread_count - thread_id) >= data->tuple_count) {
+        if(++iteration % iteration_to_send == 0 || i + blockDim.x >= data->tuple_per_block) {
             __syncthreads(); // sync threads before send operation (to ensure that all threads have written their data into the buffer)
-            if(thread_id == 0) {
-                buffers->useNextBuffer(); // switch to the next buffer
-                buffers->resetBuffer(buffers->currentBufferIndex()); // reset the offsets of the current buffer
+            if(threadIdx.x == 0) {
+                buffers->useNextBuffer(blockIdx.x); // switch to the next buffer
+                buffers->resetCurrentBuffer(blockIdx.x); // reset the offsets of the current buffer
             }
             __syncthreads(); // sync threads after send operation
         }
     }
 }
+
 
 struct BenchmarkArgs {
     uint32_t grid_dim_min;
@@ -130,10 +123,8 @@ void benchmark(BenchmarkArgs args) {
                 cudaStreamCreate(&stream);
 
                 TupleType *tuples;
-                uint64_t tuples_size = tuple_size * args.tuple_count;
-                CUDA_CHECK(cudaMalloc(&tuples, tuples_size));
-
-                generate_tuples<<<args.grid_dim_max, args.block_dim_max, args.shared_mem, stream>>>(tuple_size, args.tuple_count, tuples);
+                CUDA_CHECK(cudaMalloc(&tuples, args.tuple_count * tuple_size));
+                generate_tuples<TupleType><<<args.grid_dim_max, args.block_dim_max, args.shared_mem, stream>>>(tuples, args.tuple_count, 0, 1);
                 cudaStreamSynchronize(stream);
 
                 time_kernel(tuple_scan<offset_mode, TupleType>, 1, 1, args.shared_mem, stream, nullptr, nullptr, nullptr);
@@ -164,18 +155,17 @@ void benchmark(BenchmarkArgs args) {
                         thread_offsets.device_offsets);
 
                 const auto time_taken = std::chrono::duration_cast<std::chrono::nanoseconds>(scan_time + build_thread_offsets_time).count();
+                assert(cudaGetLastError() == cudaSuccess);
 
-                if(cudaGetLastError() == cudaSuccess) {
-                    std::cout << "08_tuple_scan" << ","
-                              << args.tuple_count << ","
-                              << tuple_size << ","
-                              << grid_dim << ","
-                              << block_dim << ","
-                              << send_buffer_size_multiplier << ","
-                              << static_cast<int>(offset_mode) << ","
-                              << time_taken << ","
-                              << gb_per_sec(scan_time + build_thread_offsets_time, tuples_size) << std::endl;
-                }
+                std::cout << "08_tuple_scan" << ","
+                          << args.tuple_count << ","
+                          << tuple_size << ","
+                          << grid_dim << ","
+                          << block_dim << ","
+                          << send_buffer_size_multiplier << ","
+                          << static_cast<int>(offset_mode) << ","
+                          << time_taken << ","
+                          << gb_per_sec(scan_time + build_thread_offsets_time, args.tuple_count * tuple_size) << std::endl;
 
                 cudaFree(tuples);
                 cudaStreamDestroy(stream);

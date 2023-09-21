@@ -111,7 +111,7 @@ __device__ void fucking_fcollect(nvshmem_team_t team, T *dest, const T *src, con
         nvshmem_putmem_nbi(dest + (my_pe * nelem), src, nelem * sizeof(T), pe);
     }
     nvshmem_quiet();
-    nvshmem_barrier_all();
+    nvshmem_barrier(team);
 }
 
 template<typename Rep, typename Period>

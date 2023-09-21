@@ -24,6 +24,8 @@ enum class SendBufferMode {
 
 template<typename Tuple>
 struct ShuffleResult {
+    std::chrono::nanoseconds histogram_time;
+    std::chrono::nanoseconds shuffle_time;
     Tuple *tuples;
     uint64_t partitionSize;
 };

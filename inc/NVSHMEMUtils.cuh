@@ -73,7 +73,6 @@ std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
 
     // wait for kernel to finish
     CUDA_CHECK(cudaStreamSynchronize(cuda_stream));
-    nvshmem_barrier_all();
 
     return duration_cast<nanoseconds>(steady_clock::now() - time_start);
 }

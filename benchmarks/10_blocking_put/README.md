@@ -1,0 +1,1 @@
+Tests whether nvshmem_put_nbi is a blocking or nonblocking call

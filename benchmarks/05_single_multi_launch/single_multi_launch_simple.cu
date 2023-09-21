@@ -5,9 +5,7 @@
 #include "nvshmem.h"
 #include <vector>
 #include <string>
-#include "rdma.hpp"
 #include "Macros.cuh"
-#include "NVSHMEMUtils.cuh"
 
 /*
     Short running

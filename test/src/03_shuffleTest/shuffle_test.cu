@@ -39,8 +39,8 @@ ShuffleResult<Tuple> call_shuffle(cudaStream_t &stream, uint64_t tuple_count) {
 #endif
 
     // shuffle data
-    const ShuffleResult<Tuple> result = shuffle<OffsetMode::SYNC_FREE, SendBufferMode::USE_BUFFER>(
-            60, 128, 3,
+    const ShuffleResult<Tuple> result = shuffle<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::USE_BUFFER>(
+            80, 128, 3,
             tuples, tuple_count,
             stream, NVSHMEM_TEAM_WORLD);
 
@@ -58,8 +58,8 @@ ShuffleResult<Tuple> call_shuffle(cudaStream_t &stream, uint64_t tuple_count) {
 }
 
 int main() {
-    constexpr uint64_t tuple_count = 1000000;
-    typedef Tuple<uint64_t, uint64_t[31]> TupleType;
+    constexpr uint64_t tuple_count = 5000000;
+    typedef Tuple<uint64_t, uint64_t[127]> TupleType;
 
     cudaStream_t stream;
 

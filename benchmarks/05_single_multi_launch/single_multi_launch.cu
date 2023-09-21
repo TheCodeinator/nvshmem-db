@@ -35,7 +35,7 @@ __global__ void calculate_and_send(const uint32_t *in, uint32_t size_in,
         for (uint32_t i{0}; i < size_buff; i++) {
             sym_mem[off + i] = in[off + i];
         }
-        nvshmem_uint32_put_nbi(sym_mem + off, sym_mem + size_in + off, size_buff, 1 - this_pe);
+        nvshmem_uint32_put_nbi(sym_mem + size_in + off, sym_mem + off, size_buff, 1 - this_pe);
 
     }
     // Exit upon completion of all put calls
@@ -100,7 +100,8 @@ int main(int argc, char *argv[]) {
     uint32_t *sym_mem = reinterpret_cast<uint32_t *>(nvshmem_malloc(2 * size_in * sizeof(uint32_t)));
 
     // Warm up CUDA context
-    calculate<<<1, 1>>>(in, buff, size_buff);
+    collective_launch(calculate, 1, 1, 0, stream1, in, buff, size_buff);
+    cudaStreamSynchronize(stream1);
 
     auto dur = time_kernel(calculate_and_send, 1, 1, 2 * size_in * sizeof(uint32_t), stream1,
                            in, size_in, size_buff, sym_mem, this_pe);

@@ -40,10 +40,10 @@ __global__ void calculate(size_t num_launches, int* res) {
 /*
     Long running kernel over whole domain
 */
-template<OccupancyMode occupany>
+template<OccupancyMode occupancy>
 __global__ void calculate_parts(size_t num_launches, int* res) {
 
-    if constexpr (occupany == OccupancyMode::SLEEP) {
+    if constexpr (occupancy == OccupancyMode::SLEEP) {
         // Compute capability >= 7.0 (V100)
         __nanosleep(100 / num_launches);
         *res += 1;

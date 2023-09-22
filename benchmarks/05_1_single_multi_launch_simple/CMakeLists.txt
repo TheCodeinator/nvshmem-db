@@ -2,8 +2,8 @@ project(bench_05_single_multi_launch_simple LANGUAGES CXX CUDA)
 
 add_executable(bench_05_single_multi_launch_simple single_multi_launch_simple.cu)
 
-add_dependencies(bench_05_single_multi_launch nvshmem nvshmem-db)
-target_link_libraries(bench_05_single_multi_launch nvshmem nvshmem-db)
+add_dependencies(bench_05_single_multi_launch_simple nvshmem nvshmem-db)
+target_link_libraries(bench_05_single_multi_launch_simple nvshmem nvshmem-db)
 
 set_property(TARGET bench_05_single_multi_launch_simple PROPERTY POSITION_INDEPENDENT_CODE ON)
 

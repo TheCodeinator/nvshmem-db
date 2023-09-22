@@ -74,14 +74,14 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMemset(res, 0, sizeof(int)));
 
     // Warm up CUDA context
-    calculate<OccupancyMode::SLEEP><<<1,1,0,stream1>>>(1,res);
+    calculate<OccupancyMode::SLEEP><<<1,1,0,stream1>>>(num_launches,res);
     cudaStreamSynchronize(stream1);
 
     CUDA_CHECK(cudaMemset(res, 0, sizeof(int)));
 
     auto start = std::chrono::steady_clock::now();
 
-    calculate<OccupancyMode::LOOP><<<1,1,0,stream1>>>(1,res);
+    calculate<OccupancyMode::LOOP><<<1,1,0,stream1>>>(num_launches,res);
     cudaStreamSynchronize(stream1);
 
     auto stop = std::chrono::steady_clock::now();

@@ -2,30 +2,60 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
-#include "nvshmem.h"
 #include <vector>
 #include <string>
+#include <assert.h>
 #include "Macros.cuh"
+
+ __constant__ uint32_t work_size = 1000000000;
+
+
+enum class OccupancyMode {
+    SLEEP = 0,
+    LOOP = 1
+};
 
 /*
     Short running
 */
+template<OccupancyMode occupancy>
 __global__ void calculate(size_t num_launches, int* res) {
 
-    //c.f. calculate_long
-    __nanosleep(1e9);
-    *res += 1;
+    if constexpr (occupancy == OccupancyMode::SLEEP) {
+        //c.f. calculate_long
+        __nanosleep(1000000000U);
+        *res += 1;
+    }
+    else if constexpr (occupancy == OccupancyMode::LOOP){
+        uint64_t approx = 0;
+        // Approximate pi/4 https://en.wikipedia.org/wiki/Leibniz_formula_for_π
+        for(uint32_t i {0}; i<work_size*num_launches; i++){
+            approx += pow((-1),i)/(2*i+1);
+        }
+        *res += 1;
+    }
+
 }
 
 /*
     Long running kernel over whole domain
 */
+template<OccupancyMode occupany>
 __global__ void calculate_parts(size_t num_launches, int* res) {
 
-    // Compute capability >= 7.0 (V100)
-    __nanosleep(1e9/num_launches);
-    *res += 1;
-
+    if constexpr (occupany == OccupancyMode::SLEEP) {
+        // Compute capability >= 7.0 (V100)
+        __nanosleep(100 / num_launches);
+        *res += 1;
+    }
+    else if constexpr (occupancy == OccupancyMode::LOOP){
+        uint64_t approx = 0;
+        // Approximate pi/4 https://en.wikipedia.org/wiki/Leibniz_formula_for_π
+        for(uint32_t i {0}; i<work_size; i++){
+            approx += pow((-1),i)/(2*i+1);
+        }
+        *res += 1;
+    }
 }
 
 // args:
@@ -33,7 +63,7 @@ __global__ void calculate_parts(size_t num_launches, int* res) {
 int main(int argc, char *argv[]) {
 
     assert(argc == 2);
-    const size_t num_launches = std::stoull(argv[1]);
+    const uint32_t num_launches = std::stoull(argv[1]);
 
     CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t stream1;
@@ -44,19 +74,19 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMemset(res, 0, sizeof(int)));
 
     // Warm up CUDA context
-    calculate<<<1,1,0,stream1>>>(1,res);
+    calculate<OccupancyMode::SLEEP><<<1,1,0,stream1>>>(1,res);
     cudaStreamSynchronize(stream1);
 
     CUDA_CHECK(cudaMemset(res, 0, sizeof(int)));
 
     auto start = std::chrono::steady_clock::now();
 
-    calculate<<<1,1,0,stream1>>>(1,res);
+    calculate<OccupancyMode::LOOP><<<1,1,0,stream1>>>(1,res);
     cudaStreamSynchronize(stream1);
 
     auto stop = std::chrono::steady_clock::now();
 
-    int* host_res;
+    int* host_res = reinterpret_cast<int*>(malloc(sizeof(int)));
     CUDA_CHECK(cudaMemcpy(host_res, res, sizeof(int), cudaMemcpyDeviceToHost));
     assert(*host_res == 1);
 
@@ -68,7 +98,7 @@ int main(int argc, char *argv[]) {
     auto start2 = std::chrono::steady_clock::now();
 
     for(int i{0}; i<num_launches;i++) {
-        calculate_parts<<<1, 1, 0, stream1>>>(num_launches, res);
+        calculate_parts<OccupancyMode::LOOP><<<1, 1, 0, stream1>>>(num_launches, res);
         cudaStreamSynchronize(stream1);
     }
 

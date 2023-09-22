@@ -1,0 +1,7 @@
+project(bench_05_single_multi_launch_simple LANGUAGES CXX CUDA)
+
+add_executable(bench_05_single_multi_launch_simple single_multi_launch_simple.cu)
+
+set_property(TARGET bench_05_single_multi_launch_simple PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+set_target_properties(bench_05_single_multi_launch_simple PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

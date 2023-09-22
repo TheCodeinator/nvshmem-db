@@ -110,7 +110,6 @@ int main(int argc, char *argv[]) {
     auto dur2 = stop2 - start2;
     auto t_ms2 = dur2.count() * 1e-6;
 
-    std::cout << "type,launches,time_single,time_multi" << std::endl;
     std::cout << "05_single_multi_launch_simple" << "," << num_launches << "," << t_ms << "," << t_ms2 << std::endl;
 
     return EXIT_SUCCESS;

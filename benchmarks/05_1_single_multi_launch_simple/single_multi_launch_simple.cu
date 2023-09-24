@@ -7,7 +7,7 @@
 #include <assert.h>
 #include "Macros.cuh"
 
- __constant__ uint32_t work_size = 1000000000;
+ __constant__ uint32_t work_size = 1000;
 
 
 enum class OccupancyMode {

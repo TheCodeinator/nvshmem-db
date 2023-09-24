@@ -35,7 +35,7 @@ for size in x_tick_locations:
     elif size < 1024 * 1024:
         x_labels.append(f'{int(size / 1024)}KB')
     else:
-        x_labels.append(f'{int(size / (1024 * 1024))}GB')
+        x_labels.append(f'{int(size / (1024 * 1024))}MB')
 
 plt.xticks(x_tick_locations, labels=x_labels, rotation=45)
 

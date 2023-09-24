@@ -9,5 +9,5 @@ echo "type,launches,time_single,time_multi" > $output_file
 
 for l in "${launches[@]}"; do
   echo "Running for $l launches"
-  ./bench_05_1_single_multi_launch_simple "$l" > $output_file
+  ./bench_05_single_multi_launch_simple "$l" > $output_file
 done

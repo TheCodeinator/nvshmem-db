@@ -20,10 +20,10 @@ plt.rcParams.update({'font.size': 23})  # Increase the font size
 rounded_message_sizes = [2**int(np.round(np.log2(size))) for size in cpu_data['message_size']]
 
 # Plot CPU-driven data with thicker lines
-plt.semilogx(rounded_message_sizes, cpu_data['throughput'], label='GPUDirect', color='blue', marker='o', linewidth=3)
+plt.semilogx(rounded_message_sizes, cpu_data['throughput'], label='CPU initiated', color='blue', marker='o', linewidth=3)
 
 # Plot nvshmem data with thicker lines
-plt.semilogx(rounded_message_sizes, nvshmem_data['throughput'], label='NVSHMEM', color='red', marker='s', linewidth=3)
+plt.semilogx(rounded_message_sizes, nvshmem_data['throughput'], label='GPU-initiated', color='red', marker='s', linewidth=3)
 
 # Set x-axis labels as powers of 2 bytes, MB, or GB
 x_tick_locations = np.unique(rounded_message_sizes)

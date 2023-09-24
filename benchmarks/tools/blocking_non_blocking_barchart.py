@@ -13,7 +13,7 @@ nbi_no_quiet_seconds = nbi_no_quiet / 1e9
 blocking_seconds = blocking / 1e9
 
 # Names for the bars
-labels = ['NBI quiet all', 'nbi quiet each', 'nbi no quiet', 'blocking']
+labels = ['await all', 'await each', 'no await', 'blocking']
 
 # Values in seconds
 values = [nbi_quiet_all_seconds, nbi_quiet_each_seconds, nbi_no_quiet_seconds, blocking_seconds]
@@ -27,7 +27,7 @@ plt.xlabel('Execution Mode', fontsize=18)
 plt.ylabel('Time (seconds)', fontsize=18)
 
 # Set the font size for x-axis labels
-plt.xticks(fontsize=16)
+plt.xticks(fontsize=20)
 
 # Show the plot
 plt.show()

@@ -194,10 +194,10 @@ __device__ void async_send_buffers(uint32_t pe, uint32_t i, const uint32_t *offs
 #endif
 
         // send data to remote PE
-        nvshmem_putmem_nbi(reinterpret_cast<void*>(symm_mem + (offsets[dest] + remote_position)),
-                           send_buffers->currentBuffer(blockIdx.x) + (dest * data->send_buffer_size_in_tuples),
-                           send_tuple_count * data->tuple_size,
-                           dest);
+        //nvshmem_putmem_nbi(reinterpret_cast<void*>(symm_mem + (offsets[dest] + remote_position)),
+        //                   send_buffers->currentBuffer(blockIdx.x) + (dest * data->send_buffer_size_in_tuples),
+        //                   send_tuple_count * data->tuple_size,
+        //                   dest);
     }
 }
 

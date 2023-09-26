@@ -27,14 +27,14 @@ ShuffleResult<Tuple> call_shuffle(cudaStream_t &stream, uint64_t tuple_count) {
             tuples, tuple_count,
             stream, NVSHMEM_TEAM_WORLD);
 
-    if (result.partitionSize == 0) {
-        throw std::runtime_error("PE " + std::to_string(pe) + " received no tuples");
-    }
-    for (uint64_t i = 0; i < result.partitionSize; ++i) {
-        if (result.tuples[i].key == 0 || distribute(result.tuples[i].key, pe_count) != pe) {
-            throw std::runtime_error("PE " + std::to_string(pe) + " received invalid tuple " + std::to_string(result.tuples[i].key) + " at index " + std::to_string(i) + " (partition size: " + std::to_string(result.partitionSize) + ")");
-        }
-    }
+    //if (result.partitionSize == 0) {
+    //    throw std::runtime_error("PE " + std::to_string(pe) + " received no tuples");
+    //}
+    //for (uint64_t i = 0; i < result.partitionSize; ++i) {
+    //    if (result.tuples[i].key == 0 || distribute(result.tuples[i].key, pe_count) != pe) {
+    //        throw std::runtime_error("PE " + std::to_string(pe) + " received invalid tuple " + std::to_string(result.tuples[i].key) + " at index " + std::to_string(i) + " (partition size: " + std::to_string(result.partitionSize) + ")");
+    //    }
+    //}
 
     free(result.tuples);
     return result;

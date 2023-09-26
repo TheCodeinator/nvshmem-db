@@ -21,11 +21,11 @@ def format_bytes(bytes):
     if bytes < 1024:
         return f"{bytes} B"
     elif bytes < 1024**2:
-        return f"{bytes / 1024:.2f} kB"
+        return f"{bytes / 1024:.0f} KiB"
     elif bytes < 1024**3:
-        return f"{bytes / (1024**2):.2f} MB"
+        return f"{bytes / (1024**2):.0f} MiB"
     else:
-        return f"{bytes / (1024**3):.2f} GB"
+        return f"{bytes / (1024**3):.0f} GiB"
 
 # Group data by block_dim and create a plot
 block_dims = filtered_df['block_dim'].unique()

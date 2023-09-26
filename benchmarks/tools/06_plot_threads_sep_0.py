@@ -5,8 +5,10 @@ import numpy as np
 # Load the CSV data
 df = pd.read_csv('results/06_put_granularity.csv')
 
+grid_dim = 1
+
 # Filter the data
-filtered_df = df[(df['grid_dim'] == 1)
+filtered_df = df[(df['grid_dim'] == grid_dim)
                  & (df['data_separation'] == 0)
                  & (df['block_dim'].isin([1, 32, 64, 512]))
                  & (df['num_hosts'] == 2)]
@@ -37,7 +39,7 @@ plt.figure(figsize=(10, 8))
 
 for i, block_dim in enumerate(block_dims):
     block_df = filtered_df[filtered_df['block_dim'] == block_dim]
-    plt.plot(block_df['message_size'].apply(format_bytes), block_df['throughput'], label=f'Block Dim {block_dim}',
+    plt.plot(block_df['message_size'].apply(format_bytes), block_df['throughput'], label=f'{grid_dim} block(s) of {block_dim} thread(s)',
              marker=markers[i], color=colors[i], linewidth=2, markersize=8)
 
 # Set plot properties

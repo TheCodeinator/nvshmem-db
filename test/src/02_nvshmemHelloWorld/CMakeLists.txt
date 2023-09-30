@@ -1,4 +1,3 @@
-
 add_executable(02_nvshmemHelloWorld nvshmem_hello_world.cu)
 
 target_link_libraries(02_nvshmemHelloWorld nvshmem)

@@ -4,44 +4,38 @@
 #include <cuda.h>
 #include "nvshmem.h"
 
-// used to check the status code of cuda routines for errors
-#undef CUDA_CHECK
-#define CUDA_CHECK(stmt)                                                          \
-    do {                                                                          \
-        cudaError_t _CHECK_result = (stmt);                                              \
-        if (cudaSuccess != _CHECK_result) {                                              \
-            fprintf(stderr, "[%s:%d] cuda failed with %s \n", __FILE__, __LINE__, \
-                    cudaGetErrorString(_CHECK_result));                                  \
-            exit(-1);                                                             \
-        }                                                                         \
-    } while (0)
+#include "shuffle_data.tpp"
 
-// used to check the status code of NVSHMEM routines for errors
-#define NVSHMEM_CHECK(stmt)                                                                \
-    do {                                                                                   \
-        int _CHECK_result = (stmt);                                                               \
-        if (NVSHMEMX_SUCCESS != _CHECK_result) {                                                  \
-            fprintf(stderr, "[%s:%d] nvshmem failed with error %d \n", __FILE__, __LINE__, \
-                    _CHECK_result);                                                               \
-            exit(-1);                                                                      \
-        }                                                                                  \
-    } while (0)
 
+template<typename key_type>
+__host__ __device__ inline uint32_t distribute(const key_type key, const uint32_t nPes) {
+    return key % nPes;
+}
+
+enum class OffsetMode {
+    ATOMIC_INCREMENT = 0,
+    SYNC_FREE = 1
+};
+
+enum class SendBufferMode {
+    USE_BUFFER = 0,
+    NO_BUFFER = 1
+};
+
+template<typename Tuple>
 struct ShuffleResult {
-    uint8_t *tuples;
+    std::chrono::nanoseconds histogram_time;
+    std::chrono::nanoseconds shuffle_time;
+    Tuple *tuples;
     uint64_t partitionSize;
 };
 
-/*
-TODO: This is problematic because it forces users of the public API to preprocess all files this is included by nvcc
-(fix -> do not expose CUDA Language extensions here or split header)
-*/
-__host__ ShuffleResult shuffle(
-    const uint8_t *localData,// ptr to device data
-    uint16_t tupleSize,
-    uint64_t tupleCount,
-    uint8_t keyOffset,
-    const cudaStream_t &stream,
-    nvshmem_team_t team);
+template<OffsetMode offset_mode, SendBufferMode send_buffer_mode, typename Tuple>
+__host__ ShuffleResult<Tuple> shuffle(
+        uint16_t grid_dimension, uint16_t block_dimension, uint8_t send_buffer_size_multiplier,
+        const Tuple *device_tuples, uint64_t tuple_count, cudaStream_t const &stream, nvshmem_team_t team
+);
 
-#endif
+#include "shuffle.tpp"
+
+#endif //NVSHMEM_DB_SHUFFLE_H

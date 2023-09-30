@@ -74,6 +74,9 @@ void benchmark(BenchmarkArgs args) {
                 send_buffer_size_multiplier_tmp <= args.send_buffer_size_multiplier_max;
                 send_buffer_size_multiplier_tmp += args.send_buffer_size_multiplier_step)
             {
+                if(send_buffer_mode == SendBufferMode::NO_BUFFER && send_buffer_size_multiplier_tmp > args.send_buffer_size_multiplier_min) {
+                    continue;
+                }
                 const auto send_buffer_size_multiplier = std::max<uint32_t>(send_buffer_size_multiplier_tmp, 1);
 
                 cudaSetDevice(nvshmem_team_my_pe(NVSHMEMX_TEAM_NODE));
@@ -93,17 +96,20 @@ void benchmark(BenchmarkArgs args) {
                         stream, NVSHMEM_TEAM_WORLD);
                 free(result.tuples);
 
-                std::cout << "02_shuffle" << ","
-                          << args.tuple_count << ","
-                          << tuple_size << ","
-                          << grid_dim << ","
-                          << block_dim << ","
-                          << send_buffer_size_multiplier << ","
-                          << static_cast<int>(offset_mode) << ","
-                          << static_cast<int>(send_buffer_mode) << ","
-                          << std::chrono::duration_cast<std::chrono::nanoseconds>(result.shuffle_time + result.histogram_time).count() << ","
-                          << gb_per_sec(result.shuffle_time + result.histogram_time, tuple_size * args.tuple_count) << std::endl;
-
+                if(nvshmem_my_pe() == 0) {
+                    std::cout << "02_shuffle" << ","
+                              << args.tuple_count << ","
+                              << tuple_size << ","
+                              << grid_dim << ","
+                              << block_dim << ","
+                              << send_buffer_size_multiplier << ","
+                              << static_cast<int>(offset_mode) << ","
+                              << static_cast<int>(send_buffer_mode) << ","
+                              << std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      result.shuffle_time + result.histogram_time).count() << ","
+                              << gb_per_sec(result.shuffle_time + result.histogram_time, tuple_size * args.tuple_count)
+                              << std::endl;
+                }
                 cudaFree(tuples);
                 cudaStreamDestroy(stream);
             }
@@ -166,7 +172,9 @@ int main(int argc, char *argv[]) {
 
     nvshmem_init();
 
-    std::cout << "type,tuple_count,tuple_size,grid_dim,block_dim,send_buffer_size_multiplier,offset_mode,send_buffer_mode,scan_time_nanoseconds,throughput_gb_s" << std::endl;
+    if(nvshmem_my_pe() == 0) {
+        std::cout << "type,tuple_count,tuple_size,grid_dim,block_dim,send_buffer_size_multiplier,offset_mode,send_buffer_mode,scan_time_nanoseconds,throughput_gb_s" << std::endl;
+    }
     BenchmarkArgs benchmarkArgs(grid_dim_min, grid_dim_step, grid_dim_max,
                                 block_dim_min, block_dim_step, block_dim_max,
                                 send_buffer_size_multiplier_min, send_buffer_size_multiplier_step, send_buffer_size_multiplier_max,
@@ -186,19 +194,13 @@ int main(int argc, char *argv[]) {
     benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::USE_BUFFER, 512>(benchmarkArgs);
     benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::USE_BUFFER, 1024>(benchmarkArgs);
 
-    //benchmark<OffsetMode::SYNC_FREE, SendBufferMode::NO_BUFFER, 32>(benchmarkArgs);
-    //benchmark<OffsetMode::SYNC_FREE, SendBufferMode::NO_BUFFER, 64>(benchmarkArgs);
-    //benchmark<OffsetMode::SYNC_FREE, SendBufferMode::NO_BUFFER, 128>(benchmarkArgs);
-    //benchmark<OffsetMode::SYNC_FREE, SendBufferMode::NO_BUFFER, 256>(benchmarkArgs);
-    //benchmark<OffsetMode::SYNC_FREE, SendBufferMode::NO_BUFFER, 512>(benchmarkArgs);
-    //benchmark<OffsetMode::SYNC_FREE, SendBufferMode::NO_BUFFER, 1024>(benchmarkArgs);
-
-    //benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 32>(benchmarkArgs);
-    //benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 64>(benchmarkArgs);
-    //benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 128>(benchmarkArgs);
-    //benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 256>(benchmarkArgs);
-    //benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 512>(benchmarkArgs);
-    //benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 1024>(benchmarkArgs);
+    benchmarkArgs.tuple_count /= 10;
+    benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 32>(benchmarkArgs);
+    benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 64>(benchmarkArgs);
+    benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 128>(benchmarkArgs);
+    benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 256>(benchmarkArgs);
+    benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 512>(benchmarkArgs);
+    benchmark<OffsetMode::ATOMIC_INCREMENT, SendBufferMode::NO_BUFFER, 1024>(benchmarkArgs);
 
     nvshmem_finalize();
     return 0;

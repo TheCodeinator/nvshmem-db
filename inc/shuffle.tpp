@@ -58,7 +58,7 @@ inline __host__ ComputeOffsetsResult offsetsFromHistograms(const uint32_t pe,
     return ComputeOffsetsResult {offsets, max_partition_size, this_partition_size};
 }
 
-template <OffsetMode offset_mode, typename Tuple>
+template <OffsetMode offset_mode, SendBufferMode send_buffer_mode, typename Tuple>
 __device__ void histLocalAtomic(uint32_t *const hist,
                                 const ShuffleData<Tuple> *data,
                                 ThreadOffsets<Tuple> *thread_offsets) {
@@ -70,22 +70,24 @@ __device__ void histLocalAtomic(uint32_t *const hist,
         const uint32_t dest = distribute(tuple.key, data->pe_count);
 
         // increment corresponding index in compute_histograms
-        auto before = atomicAdd(hist + dest, 1);
+        atomicAdd(hist + dest, 1);
         // increment the count for this thread for the current batch and destination (translate it to the offset later)
-        ++(*thread_offsets->getOffset(i / data->send_buffer_size_in_tuples, blockIdx.x, threadIdx.x, dest));
+        if constexpr(offset_mode == OffsetMode::SYNC_FREE && send_buffer_mode == SendBufferMode::USE_BUFFER) {
+            ++(*thread_offsets->getOffset(i / data->send_buffer_size_in_tuples, blockIdx.x, threadIdx.x, dest));
+        }
     }
     __syncthreads();
 
-    if constexpr(offset_mode == OffsetMode::SYNC_FREE) {
+    if constexpr(offset_mode == OffsetMode::SYNC_FREE && send_buffer_mode == SendBufferMode::USE_BUFFER) {
         for (uint32_t i = threadIdx.x; i < data->batch_count * data->pe_count; i += blockDim.x) {
             uint32_t batch = i / data->pe_count;
             uint32_t dest = i % data->pe_count;
-            uint16_t currentOffset = 0;
+            uint16_t current_offset = 0;
             for (uint32_t thread = 0; thread < blockDim.x; ++thread) {
                 uint16_t *offset = thread_offsets->getOffset(batch, blockIdx.x, thread, dest);
                 uint16_t tmp = *offset;
-                *offset = currentOffset;
-                currentOffset += tmp;
+                *offset = current_offset;
+                current_offset += tmp;
             }
         }
 #if !defined(NDEBUG) && !defined(DISABLE_ALL_SHUFFLE_PRINTS)
@@ -120,7 +122,7 @@ __device__ void histLocalAtomic(uint32_t *const hist,
  * @param nPes number of members in the team
  * @param hist device memory pointer to an int array of size pe_count to store the compute_histograms
  */
-template <OffsetMode offset_mode, typename Tuple>
+template <OffsetMode offset_mode, SendBufferMode send_buffer_mode, typename Tuple>
 __global__ void compute_histograms(
         const nvshmem_team_t team,
         const int thisPe,
@@ -130,11 +132,10 @@ __global__ void compute_histograms(
         ThreadOffsets<Tuple> *thread_offsets) {
 
     const uint32_t thread_id = global_thread_id();
-    const uint32_t thread_count = global_thread_count();
 
     // local histogram will be part of the array. globalHistograms are ordered by PE ID. Each histogram has pe_count elements
     // compute local histogram for this PE
-    histLocalAtomic<offset_mode>(localHistogram, data, thread_offsets);
+    histLocalAtomic<offset_mode, send_buffer_mode>(localHistogram, data, thread_offsets);
 
 #if !defined(NDEBUG) && !defined(DISABLE_ALL_SHUFFLE_PRINTS)
     if(thread_id == 0) {
@@ -144,6 +145,8 @@ __global__ void compute_histograms(
         }
         printf("\n");
     }
+#else
+    __nanosleep(10000);
 #endif
 
     // TODO: alltoall doesn't work, but fcollect does?
@@ -155,8 +158,8 @@ __global__ void compute_histograms(
 #if !defined(NDEBUG) && !defined(DISABLE_ALL_SHUFFLE_PRINTS)
     if(thread_id == 0) {
         printf("PE %d globalHistograms AFTER exchange:", thisPe);
-        for(int i = 0; i < data->pe_count; ++i) {
-            printf(" %d", localHistogram[i]);
+        for(int i = 0; i < data->pe_count * data->pe_count; ++i) {
+            printf(" %d", globalHistograms[i]);
         }
         printf("\n");
     }
@@ -194,10 +197,10 @@ __device__ void async_send_buffers(uint32_t pe, uint32_t i, const uint32_t *offs
 #endif
 
         // send data to remote PE
-        //nvshmem_putmem_nbi(reinterpret_cast<void*>(symm_mem + (offsets[dest] + remote_position)),
-        //                   send_buffers->currentBuffer(blockIdx.x) + (dest * data->send_buffer_size_in_tuples),
-        //                   send_tuple_count * data->tuple_size,
-        //                   dest);
+        nvshmem_putmem_nbi(reinterpret_cast<void*>(symm_mem + (offsets[dest] + remote_position)),
+                           send_buffers->currentBuffer(blockIdx.x) + (dest * data->send_buffer_size_in_tuples),
+                           send_tuple_count * data->tuple_size,
+                           dest);
     }
 }
 
@@ -226,37 +229,36 @@ __global__ void shuffle_with_offset(const nvshmem_team_t team,
             // get destination of tuple
             const uint dest = distribute(tuple.key, data->pe_count);
 
-            uint32_t offset;
-            if constexpr(offset_mode == OffsetMode::SYNC_FREE) {
-                auto thread_offset = thread_offsets->getOffset(i / data->send_buffer_size_in_tuples, blockIdx.x, threadIdx.x, dest);
-                offset = *thread_offset;
-                *thread_offset += 1;
-            } else if constexpr(offset_mode == OffsetMode::ATOMIC_INCREMENT) {
-                // increment the offset for this destination atomically (atomicAdd returns the value before increment)
-                offset = atomicAdd(send_buffers->currentOffsets(blockIdx.x) + dest, 1);
-            } else {
-                assert(false);
-            }
-
             if constexpr(send_buffer_mode == SendBufferMode::USE_BUFFER) {
+                uint32_t offset;
+                if constexpr(offset_mode == OffsetMode::SYNC_FREE) {
+                    auto thread_offset = thread_offsets->getOffset(i / data->send_buffer_size_in_tuples, blockIdx.x, threadIdx.x, dest);
+                    offset = *thread_offset;
+                    *thread_offset += 1;
+                } else if constexpr(offset_mode == OffsetMode::ATOMIC_INCREMENT) {
+                    // increment the offset for this destination atomically (atomicAdd returns the value before increment)
+                    offset = atomicAdd(send_buffers->currentOffsets(blockIdx.x) + dest, 1);
+                } else {
+                    assert(false);
+                }
+
                 assert(offset < data->send_buffer_size_in_tuples); // assert that offset is not out of bounds
 
 #if !defined(NDEBUG) && !defined(DISABLE_ALL_SHUFFLE_PRINTS)
-                if(pe == 0) {
-                    printf("PE %d, Block %d, Thread %d: writes tuple id %lu -> %d at offset %d to buffer %d\n",
-                           pe, blockIdx.x, threadIdx.x,
-                           tuple.key, dest, offset, send_buffers->currentBufferIndex(blockIdx.x));
-                }
+                printf("PE %d, Block %d, Thread %d: writes tuple id %lu -> %d at offset %d to buffer %d\n",
+                       pe, blockIdx.x, threadIdx.x,
+                       tuple.key, dest, offset, send_buffers->currentBufferIndex(blockIdx.x));
 #endif
                 send_buffers->currentBuffer(blockIdx.x)[dest * data->send_buffer_size_in_tuples + offset] = tuple;
             } else if constexpr(send_buffer_mode == SendBufferMode::NO_BUFFER) {
+                const uint32_t remote_position = atomicAdd(remote_positions + dest, 1);
 
 #if !defined(NDEBUG) && !defined(DISABLE_ALL_SHUFFLE_PRINTS)
                 printf("PE %d, Block %d, Thread %d: writes tuple id %lu -> %d at offset %d\n",
                        pe, blockIdx.x, threadIdx.x,
-                       tuple.key, dest, offsets[dest] + offset);
+                       tuple.key, dest, offsets[dest] + remote_position);
 #endif
-                nvshmem_putmem_nbi(reinterpret_cast<void*>(symm_mem + (offsets[dest] + offset)), // position to write in shared mem
+                nvshmem_putmem_nbi(reinterpret_cast<void*>(symm_mem + (offsets[dest] + remote_position)), // position to write in shared mem
                                    &tuple, // tuple to send
                                    sizeof(Tuple), // number of bytes to send
                                    dest); // destination pe
@@ -269,7 +271,7 @@ __global__ void shuffle_with_offset(const nvshmem_team_t team,
         // We do not track all buffersComp individually, because we can only await all async operations at once anyways
         if constexpr(send_buffer_mode == SendBufferMode::USE_BUFFER) {
             if(++iteration % iteration_to_send == 0 || i + blockDim.x >= data->tuple_per_block) {
-                if(threadIdx.x < data->pe_count) {
+                if(threadIdx.x == 0) {
                     nvshmem_quiet(); // wait for previous send to be completed => buffersBackup reusable after quiet finishes
                 }
                 __syncthreads(); // sync threads before send operation (to ensure that all threads have written their data into the buffer)
@@ -288,6 +290,7 @@ __global__ void shuffle_with_offset(const nvshmem_team_t team,
             assert(false);
         }
     }
+    nvshmem_quiet(); // wait for all sends to be complete
 }
 
 // TODO: use tree-based sum reduction for computing the histograms and the sums if possible:
@@ -330,8 +333,8 @@ __host__ ShuffleResult<Tuple> shuffle(
                             block_dimension,
                             tuple_count,
                             send_buffer_size_multiplier,
-                            true);
-    SendBuffers<Tuple> send_buffers(&data);
+                            send_buffer_mode == SendBufferMode::USE_BUFFER,
+                            offset_mode == OffsetMode::SYNC_FREE);
     ThreadOffsets<Tuple> thread_offsets(&data);
 
 #if !defined(DISABLE_ALL_SHUFFLE_PRINTS)
@@ -349,7 +352,7 @@ __host__ ShuffleResult<Tuple> shuffle(
 
     // TODO: What value should the "sharedMem" argument for the collective launch have?
     // compute and exchange the global_histograms and compute the offsets for remote writing
-    result.histogram_time = time_kernel(compute_histograms<offset_mode, Tuple>, grid_dimension, block_dimension,
+    result.histogram_time = time_kernel(compute_histograms<offset_mode, send_buffer_mode, Tuple>, grid_dimension, block_dimension,
                                         shared_mem, stream,
                                         team, pe, local_histograms, global_histograms,
                                         data.device_data, thread_offsets.device_offsets);
@@ -381,6 +384,8 @@ __host__ ShuffleResult<Tuple> shuffle(
     if constexpr(send_buffer_mode == SendBufferMode::NO_BUFFER) {
         nvshmemx_buffer_register(const_cast<void*>(reinterpret_cast<const void*>(data.device_tuples)), data.tuple_count * data.tuple_size);
     }
+
+    SendBuffers<Tuple> send_buffers(&data);
 
     // current position writing to the remote locations
     uint32_t *remote_positions;

@@ -1,5 +1,5 @@
 - name: Run setup playbook
-  import_playbook: setup.yaml
+  import_playbook: sync.yaml
 
 - name: Run compile playbook
   import_playbook: compile.yaml

@@ -1,0 +1,6 @@
+project(bench_10_blocking_put LANGUAGES CXX CUDA)
+add_executable(bench_10_blocking_put blocking_put.cu)
+add_dependencies(bench_10_blocking_put nvshmem-db)
+target_link_libraries(bench_10_blocking_put nvshmem-db)
+set_property(TARGET bench_10_blocking_put PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(bench_10_blocking_put PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON)

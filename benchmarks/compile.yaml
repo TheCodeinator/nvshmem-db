@@ -9,6 +9,7 @@
           -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12/bin/nvcc \
           -DNVSHMEM_PREFIX=/opt/nvshmem/ \
           -DMPI_HOME=/usr/hpcx/ompi \
+          -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 \
           -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-11 \
           -DCMAKE_BUILD_TYPE=Release
 

@@ -5,8 +5,10 @@
 #      - "01_put_coalescing"
 #      - "02_shuffle"
 #      - "03_packet_size_put_nbi"
-#      - "05_single_multi_launch"
-      - "08_tuple_scan"
+      - "05_single_multi_launch"
+#      - "06_put_granularity"
+#      - "07_sparse_sending"
+#      - "07_sparse_sending_multi_pe"
   tasks:
     - name: Synchronize benchmark scripts
       synchronize:

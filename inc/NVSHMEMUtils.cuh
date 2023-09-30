@@ -96,7 +96,6 @@ std::chrono::nanoseconds time_kernel(KernelFuncType kernel_func,
 
     // wait for kernel to finish
     CUDA_CHECK(cudaStreamSynchronize(cuda_stream));
-    nvshmem_barrier_all();
 
     return duration_cast<nanoseconds>(steady_clock::now() - time_start);
 }
@@ -117,7 +116,9 @@ __device__ void fucking_fcollect(nvshmem_team_t team, T *dest, const T *src, con
 template<typename Rep, typename Period>
 double gb_per_sec(std::chrono::duration<Rep, Period> time, const uint64_t bytes) {
     using namespace std::chrono;
-    return static_cast<double>(bytes) / time.count();
+    // the ratio of 1024^3 / 1000^3 which we have to use to convert bytes / nanosecond to GB/s
+    constexpr double conversion_factor = 1.073741824;
+    return (static_cast<double>(bytes) / duration_cast<nanoseconds>(time).count()) / conversion_factor;
 };
 
 consteval size_t log2const(size_t n) {
@@ -137,6 +138,5 @@ constexpr size_t int_pow(size_t base, size_t power) {
 
     return base * int_pow(base, power - 1);
 }
-
 
 #endif //NVSHMEM_DB_NVSHMEMUTILS_CUH

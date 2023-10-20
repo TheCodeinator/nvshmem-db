@@ -1,0 +1,22 @@
+
+As in the age of machine learning and big data the demand for storing and processing large amounts of data grows consistently, the expectations on database management systems are rising.
+Since the demands of data size grow faster than the capacity of storage devices, database management systems had to adapt and move from a single-node architecture to a distributed architecture to aggregate the storage capacity of multiple computers.
+However, when data is stored in a distributed fashion, processing of the data becomes more challenging, which forces database vendors to adapt their designs.
+Modern database systems use sophisticated partitioning schemes and compression to reduce the size of data to be exchanged during query processing.
+Furthermore, modern databases make use of specialized hardware for query processing to tackle compute intensive tasks like filtering large amounts of data based on complex expressions.
+Nowadays, Graphic Processing Units (GPUs) are commonly used for query processing because their massively parallel single-instruction multiple-data (SIMD) execution model is well-suited for many database tasks which have to perform the same computations on many data elements \cite{subramanian2023}. 
+
+A common operation to be preformed in distributed database management systems is shuffling data between nodes based on join keys to perform a join.
+For this task, GPUs can be used for efficiently scanning the data and determining their destination nodes in parallel.
+Once the destination of data items is known, those have to be transferred from the GPU device memory via the network interface card (NIC) to the remote node.
+The conventional approach to doing this is copying the data from the GPU memory to the CPU memory and then sending the data from the CPU memory.
+Since copying large amounts of data between host and device memory frequently incurs large overheads, NVIDIA developed GPUDirect \cite{gilad2011}, which allows the NIC to directly access GPU device memory.
+Nevertheless, this approach is still CPU-initiated, meaning the CPU is responsible for handling the control flow of network operations. Consequently, GPU and CPU have to synchronize for each data transfer, which might cause large overheads on the database system due to repeatedly launching GPU kernels for processing parts of the data \cite{taylor2020}.
+Recently, a new networking library allowing for GPU-initiated data transfers, called NVSHMEM, has been released which intends to mitigate this problem by exposing an interface very similar to the message passing interface (MPI) based on the OpenSHMEM specification for in-kernel use \cite{potluri2017} based on GPUDirect Async device initiated communication \cite{agostini2017}. This would allow for persistent kernels that can initiate network communication without the need to return control to the CPU. Therefore in this work we explore the potential and suitability of the NVSHMEM library for shuffling operations in distributed databases. We provide a series of microbenchmarks to explore the performance characteristics of NVSHMEM as well as an implementation of a GPU-driven shuffling operator.
+
+The remainder of this work is structured as follows. In Section \ref{sec:gpuinitiated} we introduce the basic concept and terminology of CPU and GPU-initiated RDMA and explain the concept of the shared memory abstraction used in NVSHMEM. The principal concepts of distributed shuffling algorithms are explained in Section \ref{sec:shufflealgos}. In Section \ref{sec:microbench} we explore the performance characteristics of NVSHMEM communication primitives to find out which algorithmic options from Section \ref{sec:shufflealgos} should be used in the implementation in \ref{sec:impl}. Chapter \ref{sec:eval} will give an evaluation of the performance of our shuffle algorithm. Finally, we discuss our results and limitations in Section \ref{sec:discuss} and share our lessons learned and perspective on future work in Section \ref{sec:conclusion}.
+
+% TODO: goals 
+
+
+% TODO: references!

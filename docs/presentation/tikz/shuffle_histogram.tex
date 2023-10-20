@@ -1,0 +1,117 @@
+\begin{tikzpicture}
+    \node[data-box](data-box-0){2};
+    \node[data-box, below=0em of data-box-0](data-box-1){3};
+    \node[data-box, below=0em of data-box-1](data-box-2){4};
+    \node[data-box, below=0em of data-box-2](data-box-3){5};
+    \node[data-box, below=0em of data-box-3](data-box-4){6};
+    \node[data-box, below=0em of data-box-4](data-box-5){7};
+    \node[data-box, below=0em of data-box-5](data-box-6){8};
+    \node[data-box, below=0em of data-box-6](data-box-7){9};
+    
+    \draw[dotted, thick, -Latex] ([yshift=-0.25em]data-box-7.south)
+    -- ([yshift=-2em]data-box-7.south);
+    \draw[dotted, thick, -Latex] ([yshift=0.25em]data-box-0.north)
+    -- ([yshift=2em]data-box-0.north);
+    
+    % Histogram Node 1
+    \node[hist-box, right=8em of data-box-2](hist-0-0){3};
+    \node[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-0-0.south east){\footnotesize$\rightarrow 0$};
+
+    \node[hist-box, below=0em of hist-0-0](hist-0-1){2};
+    \node[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-0-1.south east){\footnotesize$\rightarrow 1$};
+
+    \node[hist-box, below=0em of hist-0-1](hist-0-2){3};
+    \node[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-0-2.south east){\footnotesize$\rightarrow 2$};
+    
+    % Create invisible hist-0-2 box for fit
+    \node[hist-box, below=3em of hist-0-0, opacity=0](hist-0-final){};
+    
+    \node[hist-buf, fit=(hist-0-0) (hist-0-final), label={[text=TUDa-4d, font=\small, align=center, text width=4em]above:Local\\Histogram Node 0}] (hist-buf-0-box) {};
+    
+    % Animated arrows
+    % Yes, this should probably be done with custom commands to avoid repetition
+    \draw<1>[thick, -Latex] (data-box-0.east) -- (hist-0-2.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-0.east) -- (hist-0-2.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-1.east) -- (hist-0-0.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-1.east) -- (hist-0-0.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-2.east) -- (hist-0-1.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-2.east) -- (hist-0-1.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-3.east) -- (hist-0-2.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-3.east) -- (hist-0-2.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-4.east) -- (hist-0-0.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-4.east) -- (hist-0-0.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-5.east) -- (hist-0-1.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-5.east) -- (hist-0-1.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-6.east) -- (hist-0-2.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-6.east) -- (hist-0-2.west) {};
+
+    \draw<1>[thick, -Latex] (data-box-7.east) -- (hist-0-0.west) {};
+    \draw<2->[thick, -Latex, opacity=0.15] (data-box-7.east) -- (hist-0-0.west) {};
+
+    % Histogram Node 1
+    
+    \node<2->[hist-box, right=4em of hist-0-0](hist-1-0){$h_1(0)$};
+    \node<2->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-1-0.south east){\footnotesize$\rightarrow 0$};
+
+    \node<2->[hist-box, below=0em of hist-1-0](hist-1-1){$h_1(1)$};
+    \node<2->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-1-1.south east){\footnotesize$\rightarrow 1$};
+
+    \node<2->[hist-box, below=0em of hist-1-1](hist-1-2){$h_1(2)$};
+    \node<2->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-1-2.south east){\footnotesize$\rightarrow 2$};
+    
+    \node<2->[hist-buf, fit=(hist-1-0) (hist-1-2), label={[text=TUDa-4d, font=\small, align=center, text width=4em]above:Local\\Histogram Node 1}] (hist-buf-1-box) {};
+    
+    % Histogram Node 2
+    
+    \node<2->[hist-box, right=4em of hist-1-0](hist-2-0){$h_2(0)$};
+    \node<2->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-2-0.south east){\footnotesize$\rightarrow 0$};
+
+    \node<2->[hist-box, below=0em of hist-2-0](hist-2-1){$h_2(1)$};
+    \node<2->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-2-1.south east){\footnotesize$\rightarrow 1$};
+
+    \node<2->[hist-box, below=0em of hist-2-1](hist-2-2){$h_2(2)$};
+    \node<2->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-2-2.south east){\footnotesize$\rightarrow 2$};
+    
+    \node<2->[hist-buf, fit=(hist-2-0) (hist-2-2), label={[text=TUDa-4d, font=\small, align=center, text width=4em]above:Local\\Histogram Node 2}] (hist-buf-2-box) {};
+    
+    % Giant fcollect
+
+    \coordinate<2-> (a) at ([yshift=-3em]hist-0-2.south);
+    \coordinate<2-> (b) at ([yshift=-3em]hist-2-2.south);
+    \coordinate<2-> (midpoint) at ($(a)!0.5!(b)$);
+
+    \node<2->[single arrow, very thick, fill=TUDa-4d,
+          minimum width=8pt, single arrow head extend=3pt,
+          inner xsep=0pt,
+          fit=(a) (b)] (arrow1) {};
+
+    \node<2->[single arrow, very thick, fill=TUDa-4d,
+          minimum width=8pt, single arrow head extend=3pt,
+          inner xsep=0pt, rotate=180,
+          fit=(a) (b)] (arrow2) {};
+          
+    \node<2->[above=1mm of midpoint, font=\footnotesize, text=TUDa-4d] {Exchange with fcollect};
+    
+    % Final Histogram
+    
+    \draw<3->[double, thick, -Latex] ([xshift=2em]hist-2-1.east)
+    -- ([xshift=4em]hist-2-1.east);
+    
+    \node<3->[hist-box, minimum width=7em, right=6em of hist-2-0](hist-2-0){$\sum_{i=0}^{k-1} h_i(0)$};
+    \node<3->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-2-0.south east){\footnotesize$\rightarrow 0$};
+    
+    \node<3->[hist-box, minimum width=7em, below=0em of hist-2-0](hist-2-1){$\sum_{i=0}^{k-1} h_i(1)$};
+    \node<3->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-2-1.south east){\footnotesize$\rightarrow 1$};
+    
+    \node<3->[hist-box, minimum width=7em, below=0em of hist-2-1](hist-2-2){$\sum_{i=0}^{k-1} h_i(2)$};
+    \node<3->[anchor=south east,inner sep=2pt, text=TUDa-4d] at (hist-2-2.south east){\footnotesize$\rightarrow 2$};
+    
+    \node<3->[hist-buf, fit=(hist-2-0) (hist-2-2), label={[text=TUDa-4d, font=\small, align=center, text width=4em]above:Offsets\\Node k}] (hist-buf-2-box) {};
+
+\end{tikzpicture}

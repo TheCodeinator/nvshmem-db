@@ -1,0 +1,91 @@
+%!TEX program = lualatex
+
+\documentclass[
+	english,
+	ruledheaders=section,
+	%class=report,
+	accentcolor=8c,
+	type=intern,
+	marginpar=false,
+    logo=true,
+	fontsize=10.5pt
+	]{tudapub}
+
+\usepackage[ngerman, main=english]{babel}
+\usepackage[autostyle]{csquotes}
+\usepackage{microtype}
+\usepackage{seqsplit}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{parskip}
+\usepackage{caption}
+\usepackage{cleveref}
+\usepackage{biblatex}
+
+\usepackage{tikz}
+\usetikzlibrary{3d, angles, animations, arrows, arrows.meta, arrows.spaced, automata, babel, backgrounds, bending, calc, calendar, chains, circuits.ee.IEC, circuits.logic.CDH, circuits.logic.IEC, circuits.logic.US, datavisualization, datavisualization.formats.functions, datavisualization.polar, decorations, decorations.footprints, decorations.fractals, decorations.markings, decorations.pathmorphing, decorations.pathreplacing, decorations.shapes, decorations.text, er, external, fadings, fit, fixedpointarithmetic, folding, fpu, graphs, graphs.standard, intersections, lindenmayersystems, math, matrix, patterns, patterns.meta, perspective, petri, plotmarks, positioning, quotes, rdf, scopes, shadings, shadows, shadows.blur, shapes, shapes.arrows, shapes.callouts, shapes.gates.logic.IEC, shapes.gates.logic.US, shapes.geometric, shapes.misc, shapes.multipart, shapes.symbols, spy, svg.path, through, tikzmark, topaths, trees, turtle, views}
+
+\lstdefinestyle{mystyle}{               
+	captionpos=b,    
+	basicstyle=\ttfamily,
+	showspaces=false,                          % show spaces (with underscores)
+	showstringspaces=false,            % underline spaces within strings
+	showtabs=false,                            % show tabs using underscores
+	frame=single,                  % adds a frame around the code
+	tabsize=4,                     % default tabsize
+	breaklines=true,                  % automatic line breaking
+	columns=fullflexible,
+	breakautoindent=false,
+	framerule=1pt,
+	xleftmargin=0pt,
+	xrightmargin=0pt,
+	breakindent=0pt,
+	resetmargins=true
+}
+\lstset{style=mystyle}
+
+\addbibresource{bibliography.bib} 
+
+\begin{document}
+
+\frontmatter
+
+\title{Benchmarking NVSHMEM for Shuffling Operations in Distributed Database Systems}
+\author{Alexander Muth, Alexander Städing, Jonas Weßner, Luis Wientgens}
+
+\date{\today}
+\maketitle
+
+\mainmatter
+
+\begin{abstract}
+    Modern Database Management Systems (DBMSs) increasingly utilize the massively parallel architecture of Graphics Processing Units to increase performance of query operators. One building block for many query operator such as joins or aggregations is predicate-based distributed data shuffling. However one major challenge in the design for shuffling operators in GPU-accelerated distributed DBMS is the communication strategy for data exchange between nodes. The chosen strategy will impact performance and scalabilty of the shuffling operator. Specifically a common idiom in GPU-accelerated computing is to launch short GPU kernels for compute task but return to the CPU for communication. This is not optimal w.r.t the goals of performance and scalability as it introduces kernel launch overheads and forced sequentialization as well as increasing the CPU involvement. NVIDIA is actively working on GPU-initiated network communication and has recently introduced NVSHMEM, a GPU communication library that provides MPI-like communication and synchronization primitives from inside CUDA kernels. This work intends to evaluate the performance and suitability of NVSHMEM for database shuffling operators. We find that it is possible to implement shuffling over the network using NVSHMEM while achieving reasonable throughput, but also that NVSHMEM exhibits unintuitive performance characteristics and problems with the asynchronous communication interfaces that do not behave as documented. Furthermore we question the suitability of NVSHMEMs programming and memory model for the use outside of typical HPC environments.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+\input{introduction}
+
+\section{GPU-inititated RDMA with NVSHMEM}\label{sec:gpuinitiated}
+\input{CPUGPURDMA}
+
+\section{Distributed Shuffle Algorithms}\label{sec:shufflealgos}
+\input{distributedshuffle}
+
+\section{Microbenchmarking NVSHMEM}\label{sec:microbench}
+\input{microbenchmarks}
+
+\section{Implementation}\label{sec:impl}
+\input{implementationdetails}
+
+\section{Evaluation}\label{sec:eval}
+\input{evaluation}
+
+\section{Discussion}\label{sec:discuss}
+\input{discussion}
+
+\section{Conclusion and Outlook}\label{sec:conclusion}
+\input{conclusionoutlook}
+
+\printbibliography
+
+\end{document}

@@ -1,0 +1,82 @@
+In the conventional approach to distributed databases, the CPU orchestrates data transfer between nodes. When using this CPU-initiated communication model, the CPU copies data from the GPU device memory to main memory.
+
+GPUDirect \cite{gilad2011} makes it possible to avoid this copy overhead by sending data directly from the GPU.
+This improved communication model using GPUDirect has a significant impact on performance, but the latency introduced from CPU initiation still leaves room for improvement: namely the removal of the CPU entirely from the communication pipeline.
+This is possible with the NVSHMEM library from NVIDIA using strategies discussed in this section.
+
+The following figures illustrate the difference in critical sections between the two approaches.
+
+\begin{figure}[h]
+    \centering
+    \captionsetup{justification=centering}
+    \input{tikz/cpu_in.tex}
+    \caption{Communication with CPU in critical path}
+    \label{fig:cpu_in_crit}
+\end{figure}
+
+In Figure \ref{fig:cpu_in_crit}, the CPU is included in the critical communication path, incurring a latency penalty.
+The following Figure \ref{fig:cpu_out_crit} shows the critical communication path in the GPU initiated approach, which no longer includes the CPU.
+
+\begin{figure}[h]
+    \centering
+    \captionsetup{justification=centering}
+    \input{tikz/cpu_out.tex}
+    \caption{Communication with CPU out of critical path}
+    \label{fig:cpu_out_crit}
+\end{figure}
+
+This paper explores this idea and its challenges using the NVSHMEM library for GPU-to-GPU communication, bypassing the latency introduced by the CPU.
+Specifically, it analyzes the performance characteristics of NVSHMEM, and whether it provides a significant benefit for database workloads.
+
+While the latency may be significantly improved with this approach, it is possible that additional complexity or issues in other metrics such as throughput make this approach unrealistic.
+
+\clearpage
+
+\subsection{Kernel Launch Overhead}
+
+A common GPU programming model involves launching compute-heavy kernels on the device (GPU) and returning control to the host (CPU) before the next kernel launch.
+The following Figure \ref{fig:kernel_launch_overhead} quantifies the impact of these kernel launches to assess whether this is an area of potential optimization.
+
+\begin{figure}[h]
+    \centering
+    \captionsetup{justification=centering}
+    \includegraphics[width=0.4\textwidth]{img/overhead.png}
+    \caption{Kernel launch overhead}
+    \label{fig:kernel_launch_overhead}
+\end{figure}
+
+In this experiment, a progressively increasing problem size is tested with different kernel granularities.
+The \enquote{Single launch} configuration uses a larger kernel, which is only be launched once.
+On the other hand, the \enquote{Multi launch} configuration splits the work instead into smaller kernels which are launched separately.
+Even though the same amount of work is completed by each configuration for a given problem size, there is a measurable increase in the kernel overhead - the time it takes to launch a kernel - for multiple kernel launches.
+
+This serves as an important motivation to reduce the number of kernel launches in latency sensitive applications such as databases.
+The problem with reducing the number of kernel launches in traditional CPU-initiated communication is that the CPU's control of the communication requires kernels to be much more fine-grained.
+
+However, with the NVSHMEM programming model, it is possible to have much longer running kernels working more independently from the CPU, which would significantly reduce overhead induced from kernel launches.
+
+\subsection{Programming Model}
+
+NVSHMEM employs a programming model inspired by HPC-style computing, with the focus on cluster-wide symmetric memory exchanges.
+The following Figure \ref{fig:nvshmem_sym_mem} illustrates the idea behind this symmetric memory model.
+
+\begin{figure}[h]
+    \centering
+    \captionsetup{justification=centering}
+    \input{tikz/sym_mem}
+    \caption{NVSHMEM symmetric memory model}
+    \label{fig:nvshmem_sym_mem}
+\end{figure}
+
+In this model, a PE (Processing Element) represents a group of operating system processes, which may be executed on one or more nodes in a GPU cluster\cite{NVSHMEM2023}.
+However, while it is possible to launch multiple PEs on a single GPU, this is not a recommended configuration in a production deployment, so this paper will focus on configurations with one PE per GPU and one GPU per node.
+
+In this paper, we use NVSHMEM primitives for collective communication such as \textit{fcollect} to exchange local portions of a symmetrically allocated block with all the other PEs in the cluster.
+Additionally, calls such as \textit{put\_nbi} are used for direct PE-to-PE communication.
+
+Leveraging NVSHMEM allows us to reduce CPU involvement in data exchanges for benefits such as reduced communication latency.
+However, this comes at the cost of a more complex programming model.
+Compared to traditional distributed database approaches, using NVSHMEM for CPU independent communication is significantly more complex.
+
+% - explain the difference between CPU- and GPU-initiated communicatoin
+% - Explain the potential advantage of GPU-initiated communication: less kernel launch overhead, less CPU utilization, easier balance between compute and networking w/ async calls

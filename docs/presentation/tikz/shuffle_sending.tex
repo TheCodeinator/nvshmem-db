@@ -1,0 +1,126 @@
+\begin{tikzpicture}
+    \node[data-box](data-box-0){2};
+    \node[data-box, below=0em of data-box-0](data-box-1){3};
+    \node[data-box, below=0em of data-box-1](data-box-2){4};
+    \node[data-box, below=0em of data-box-2](data-box-3){5};
+    \node[data-box, below=0em of data-box-3](data-box-4){6};
+    \node[data-box, below=0em of data-box-4](data-box-5){7};
+    \node[data-box, below=0em of data-box-5](data-box-6){8};
+    \node[data-box, below=0em of data-box-6](data-box-7){9};
+    
+    \draw[dotted, thick, -Latex] ([yshift=-0.25em]data-box-7.south)
+    -- ([yshift=-2em]data-box-7.south);
+    \draw[dotted, thick, -Latex] ([yshift=0.25em]data-box-0.north)
+    -- ([yshift=2em]data-box-0.north);
+
+    % TODO: Align bounding box labels left
+    
+    % Send buffer 0 (key % 3 == 0)
+    \node[data-box, right=8em of data-box-1](send-buf-0-0){};
+    \node<2-3>[data-box] at (send-buf-0-0) (send-buf-0-0-num){3};
+    
+    \node[data-box, right=0em of send-buf-0-0](send-buf-0-1){};
+    \node<3>[data-box] at (send-buf-0-1) (send-buf-0-1-num){6};
+    
+    \node[data-box, right=0em of send-buf-0-1](send-buf-0-2){};
+    \node<3>[data-box] at (send-buf-0-2) (send-buf-0-2-num){9};
+    
+    % Bounding box
+    \node[send-buf, fit=(send-buf-0-0) (send-buf-0-2), label={[text=TUDa-1c, font=\small]above:Send Buffer 0}] (send-buf-0-box) {};
+    
+    % Send buffer 1 (key % 3 == 1)
+    \node[data-box, below=3em of send-buf-0-0](send-buf-1-0){};
+    \node<2-3>[data-box] at (send-buf-1-0) (send-buf-1-0-num){4};
+
+    \node[data-box, right=0em of send-buf-1-0](send-buf-1-1){};
+    \node<3>[data-box] at (send-buf-1-1) (send-buf-1-1-num){7};
+    
+    \node[data-box, right=0em of send-buf-1-1](send-buf-1-2){};
+
+    % Bounding box
+    \node[send-buf, fit=(send-buf-1-0) (send-buf-1-2), label={[text=TUDa-1c, font=\small]above:Send Buffer 1}] (send-buf-1-box) {};
+    
+    % Send buffer 2 (key % 3 == 2)
+    \node[data-box, below=3em of send-buf-1-0](send-buf-2-0){};
+    \node<2-3>[data-box] at (send-buf-2-0) (send-buf-2-0-num){2};
+    
+    \node[data-box, right=0em of send-buf-2-0](send-buf-2-1){};
+    \node<2-3>[data-box] at (send-buf-2-1) (send-buf-2-1-num){5};
+    
+    \node[data-box, right=0em of send-buf-2-1](send-buf-2-2){};
+    \node<3>[data-box] at (send-buf-2-2) (send-buf-2-2-num){8};
+
+    % Bounding box
+    \node[send-buf, fit=(send-buf-2-0) (send-buf-2-2), label={[text=TUDa-1c, font=\small]above:Send Buffer 2}] (send-buf-2-box) {};
+
+
+    % Arrows
+    
+    % First scan batch
+    \draw<2>[thick, -Latex] (data-box-0.east) -- (send-buf-2-0.west) {};
+    \draw<2>[thick, -Latex] (data-box-1.east) -- (send-buf-0-0.west) {};
+    \draw<2>[thick, -Latex] (data-box-2.east) -- (send-buf-1-0.west) {};
+    \draw<2>[thick, -Latex] (data-box-3.east) -- (send-buf-2-0.west) {};
+    
+    % Gray arrows
+    \draw<3->[thick, -Latex, opacity=0.15] (data-box-0.east) -- (send-buf-2-0.west) {};
+    \draw<3->[thick, -Latex, opacity=0.15] (data-box-1.east) -- (send-buf-0-0.west) {};
+    \draw<3->[thick, -Latex, opacity=0.15] (data-box-2.east) -- (send-buf-1-0.west) {};
+    \draw<3->[thick, -Latex, opacity=0.15] (data-box-3.east) -- (send-buf-2-0.west) {};
+
+    % Second scan batch
+    \draw<3>[thick, -Latex] (data-box-4.east) -- (send-buf-0-0.west) {};
+    \draw<3>[thick, -Latex] (data-box-5.east) -- (send-buf-1-0.west) {};
+    \draw<3>[thick, -Latex] (data-box-6.east) -- (send-buf-2-0.west) {};
+    \draw<3>[thick, -Latex] (data-box-7.east) -- (send-buf-0-0.west) {};
+    
+    % Gray arrows
+    \draw<4->[thick, -Latex, opacity=0.15] (data-box-4.east) -- (send-buf-0-0.west) {};
+    \draw<4->[thick, -Latex, opacity=0.15] (data-box-5.east) -- (send-buf-1-0.west) {};
+    \draw<4->[thick, -Latex, opacity=0.15] (data-box-6.east) -- (send-buf-2-0.west) {};
+    \draw<4->[thick, -Latex, opacity=0.15] (data-box-7.east) -- (send-buf-0-0.west) {};
+
+    
+    % Send buffer 3 (Backup for 0) (key % 3 == 0)
+    \node<4->[data-box, right=6em of send-buf-0-2](send-buf-3-0){3};
+    \node<4->[data-box, right=0em of send-buf-3-0](send-buf-3-1){6};
+    \node<4->[data-box, right=0em of send-buf-3-1](send-buf-3-2){9};
+    % Bounding box
+    \node<4->[send-buf, draw=TUDa-1b!80!white, fit=(send-buf-3-0) (send-buf-3-2), label={[text=TUDa-1b!80!white, font=\small]above:Backup Buffer 0}] (send-buf-3-box) {};
+    
+    % Send buffer 4 (Backup for 1) (key % 3 == 1)
+    \node<4->[data-box, below=3em of send-buf-3-0](send-buf-4-0){4};
+    \node<4->[data-box, right=0em of send-buf-4-0](send-buf-4-1){7};
+    \node<4->[data-box, right=0em of send-buf-4-1](send-buf-4-2){};
+    % Bounding box
+    \node<4->[send-buf, draw=TUDa-1b!80!white, fit=(send-buf-4-0) (send-buf-4-2), label={[text=TUDa-1b!80!white, font=\small]above:Backup Buffer 1}] (send-buf-4-box) {};
+
+    % Send buffer 5 (Backup for 2) (key % 3 == 2)
+    \node<4->[data-box, below=3em of send-buf-4-0](send-buf-5-0){2};
+    \node<4->[data-box, right=0em of send-buf-5-0](send-buf-5-1){5};
+    \node<4->[data-box, right=0em of send-buf-5-1](send-buf-5-2){8};
+    % Bounding box
+    \node<4->[send-buf, draw=TUDa-1b!80!white, fit=(send-buf-5-0) (send-buf-5-2), label={[text=TUDa-1b!80!white, font=\small]above:Backup Buffer 2}] (send-buf-5-box) {};
+
+    \draw<4->[dotted, thick, latex'-latex'] ([xshift=-2em]send-buf-3-0.west)
+    -- node [midway, above=0em, align=center, text width=3em, font=\tiny] {Swap}
+    ([xshift=-4em]send-buf-3-0.west);
+    \draw<4->[dotted, thick, latex'-latex'] ([xshift=-2em]send-buf-4-0.west)
+    -- node [midway, above=0em, align=center, text width=3em, font=\tiny] {Swap}
+    ([xshift=-4em]send-buf-4-0.west);
+    \draw<4->[dotted, thick, latex'-latex'] ([xshift=-2em]send-buf-5-0.west)
+    -- node [midway, above=0em, align=center, text width=3em, font=\tiny] {Swap}
+    ([xshift=-4em]send-buf-5-0.west);
+    
+    % Async RDMA
+    \draw<4->[double, thick, -Latex] ([xshift=3em]send-buf-3-2.east)
+    -- node [near end, right=2em] {Async RDMA}
+    ([xshift=6em]send-buf-3-2.east);
+    \draw<4->[double, thick, -Latex] ([xshift=3em]send-buf-4-2.east)
+    -- node [near end, right=2em] {Async RDMA}
+    ([xshift=6em]send-buf-4-2.east);
+    \draw<4->[double, thick, -Latex] ([xshift=3em]send-buf-5-2.east)
+    -- node [near end, right=2em] {Async RDMA}
+    ([xshift=6em]send-buf-5-2.east);
+  
+\end{tikzpicture}

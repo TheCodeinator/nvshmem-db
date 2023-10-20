@@ -1,0 +1,42 @@
+In this chapter, we describe the implementation of our shuffle algorithm.
+We have implemented various versions of the shuffle algorithm, which can be switched using template parameters. As described in Chapter \ref{sec:shufflealgos}, we utilize multi-threaded scanning with one-sided communication. The send buffers can be activated, but the shuffle can also be executed without them. If send buffers are disabled, each tuple is sent directly. If send buffers are activated, one can choose between options (1) atomic insertion and (3) sync-free insertion from Chapter \ref{sec:shuffle:send-buffers}. In all cases of activated send buffers, double buffering is enabled, as described in Chapter \ref{sec:shuffle:double-buffering}. The send buffers are block-local buffers, meaning each block in a grid has its own send buffers that only that block accesses and sends from. 
+
+As seen in the microbenchmark in Chapter \ref{sec:microbench}, it is evident that even with 40 blocks, the message size must be at least 4 KiB to approach the maximum throughput. Therefore, we decided not to assign a fixed size to the send buffer. This allows the send buffer size to be adjusted based on the use case and the number of blocks. It is also observed that sending large buffers from a few block threads outperforms the implementation with small message sizes from many threads. Thus, our implementations with send buffers should significantly outperform those without send buffers, as long as the tuples do not become excessively large. To validate this hypothesis, we have implemented both variants for later testing. We have opted for block-level send buffers because they align with the results of the microbenchmarks, where many blocks with few threads were used. Block-level atomics are more cost-effective than crossing block boundaries, and there is no straightforward method to synchronize threads across block boundaries.
+
+Our shuffle algorithm utilizes a custom implementation of the NVSHMEM \textit{fcollect} primitive to exchange local histograms since it was found that at least \textit{nvshmem\_uint32\_fcollect} does not function when our configuration is compiled in release mode. Furthermore, we use \textit{nvshmem\_putmem\_nbi} to transmit tuples either directly or within the send buffers to the destination PE and \textit{nvshmem\_quiet} to wait for the previous non-blocking call. As mentioned in the preceding paragraph, this currently does not work because the non-blocking interface currently blocks. We also employ \textit{nvshmem\_barrier} to synchronize all PEs, as well as \textit{nvshmem\_malloc} and \textit{nvshmem\_free} to allocate and deallocate symmetric memory.
+
+The runtime of the construction of local histograms scales linearly with the number of tuples since each tuple must be processed once to increase a counter for the destination PE. When the sync-free mode is enabled, an additional $ n_{batches} * n_{pes} * n_{threads\_per\_block} $ iterations are required in each block to create the thread-level histograms. The exchange of our local histograms scales linearly with the number of PEs, and the construction of global histograms is quadratic in the number of PEs.
+
+The tuple scan of the shuffle and insertion into the send buffers runtime scale linearly with the number of tuples. The sending process of the send buffers within the shuffle itself scales linearly with the number of PEs.
+
+In addition to runtime complexity, memory complexity should not be overlooked. For the local histograms, it scales linearly with the number of PEs, and for the global histogram, it is quadratic in the number of PEs. For the thread-level histograms in the sync-free inserts, $ n_{blocks} * n_{threads\_per\_block} * n_{batches} * n_{pes} $ \textit{uint16\_t} (= 2 bytes) are required. Both the local and global histograms' memory is symmetric to allow access via NVSHMEM primitives, whereas local device memory suffices for the thread-level histograms.
+
+The shuffle itself, in addition to the indices of the currently selected buffers for double buffering per block (linear with block count), requires two buffers per block to store the current offsets for each send buffer. This offset buffer encompasses $ 2 * n_{blocks} * n_{pes} $ numbers of type \textit{uint32\_t} (= 4 bytes). Furthermore, a buffer is needed to store the current remote offset per destination, which scales linearly with the number of PEs. Lastly, the send buffers are needed, and due to double buffering, they are required in duplicate. Therefore, the send buffers must accommodate a total of $ 2 * n_{blocks} * n_{threads\_per\_block} * n_{pes} * n_{multiplier} $ tuples. The multiplier can be varied in our shuffle and specifies how many tuples per thread can fit in the send buffer at most.
+
+The mode without a send buffer has the lowest memory complexity but is expected to be slower due to the sending behavior identified in the microbenchmarks in Chapter \ref{sec:microbench}. Sending with a send buffer and atomic increment has lower memory complexity but may have a higher runtime than the sync-free version. It needs to be tested whether the atomic operations cause congestion, potentially offsetting the higher runtime complexity when building the histograms of the sync-free variant.
+
+In our implementation, we assume that each batch contains an equal number of tuples. Consequently, the send buffers provide enough space to hold all tuples in a batch, even if all tuples are sent to the same destination PE. In the reverse scenario, where tuples are evenly distributed, each send buffer is only filled to $ 1 / n_{pes} $, eliminating the need to check whether the buffers are full after each iteration, thereby saving instructions. Double buffering is used to overlap this latency.
+
+The interface of our shuffle algorithm is shown in Listing \ref{lst:shuffle_signature}. It must be called by every PE and offers variations through the parameters as well as compile-time modes, which can be selected via template parameters, along with the tuple type. The passed tuple pointer must be a device pointer.
+
+Within this function, the shuffle is executed in the following sequence:
+\begin{enumerate}
+    \item  Allocation of histogram buffers.
+    \item Scanning of tuples and construction of local histograms.
+    \item Exchange of local histograms and construction of global histograms.
+    \item Allocation of the send buffer and symmetric memory to receive all tuples.
+    \item Scanning of tuples and sending them to the respective destination PE.
+    \item Synchronization of all PEs to guarantee the completion of all sending operations.
+\end{enumerate}
+
+\begin{lstlisting}[float=htbp, language=C++,caption={Interface of our suffle algorithm},label=lst:shuffle_signature]
+template <OffsetMode offset_mode,
+            SendBufferMode send_buffer_mode,
+            typename Tuple>
+__host__ ShuffleResult<Tuple> shuffle(
+        uint16_t grid_dimension, uint16_t block_dimension,
+        uint8_t send_buffer_size_multiplier,
+        const Tuple *device_tuples, uint64_t tuple_count,
+        cudaStream_t const &stream, nvshmem_team_t team
+)
+\end{lstlisting}

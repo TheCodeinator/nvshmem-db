@@ -1,0 +1,15 @@
+This paper explored the potential of NVSHMEM for enhancing the performance of communication-intensive workloads such as shuffling operations in distributed database systems.
+Using NVSHMEM, we were able to leverage GPU-initated communication - as opposed to the traditional CPU-initiated approach - for optimized data transfers.
+
+We made several key findings and contributions in this paper.
+Using NVSHMEM, we built a GPU-initiated shuffle algorithm and benchmarked it, evaluating multiple algorithmic options.
+
+Our microbenchmarks demonstrate that while NVSHMEM can achieve reasonable throughput, it also exhibits performance characteristics that are non-trivial to understand and do not align with initial expectations.
+
+Additionally, we found out that while the use of NVSHMEM can reduce the kernel launch overhead, it comes at the cost of a more complex programming model, requiring careful design for communication between the host and device.
+
+While NVSHMEM shows clear potential for performance improvements, it is not clear whether this approach is appropriate for general database applications.
+In future work, a deeper dive into the intricacies of NVSHMEM's internal workings is warranted to explore its usefulness in a distributed database context.
+
+
+% Points to mentions: investigated performance aspects of nvshmem by means of microbenchmarks. Implemented a shuffling algorithm with different approaches for sending and synchronization. Nvshmem was not designed for use in a database environment which makes adaption complicated.

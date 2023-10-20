@@ -1,0 +1,142 @@
+@inproceedings{taylor2020,
+  author={Groves, Taylor and Brock, Ben and Chen, Yuxin and Ibrahim, Khaled Z. and Oliker, Lenny and Wright, Nicholas J. and Williams, Samuel and Yelick, Katherine},
+  booktitle={2020 IEEE/ACM Performance Modeling, Benchmarking and Simulation of High Performance Computer Systems (PMBS)}, 
+  title={{Performance Trade-offs in GPU Communication: A Study of Host and Device-initiated Approaches}}, 
+  year={2020},
+  volume={},
+  number={},
+  pages={126-137},
+  doi={10.1109/PMBS51919.2020.00016}
+}
+
+@inproceedings{gilad2011,
+author = {Shainer, Gilad and Lui, Pak and Liu, Tong},
+title = {{The Development of Mellanox/NVIDIA GPUDirect over InfiniBand: A New Model for GPU to GPU Communications}},
+year = {2011},
+isbn = {9781450308885},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/2016741.2016769},
+doi = {10.1145/2016741.2016769},
+abstract = {The usage and adoption of General Purpose GPUs (GPGPU) in HPC systems is increasing due to the unparalleled performance advantage of the GPUs and the ability to fulfill the ever-increasing demands for floating points operations. While the GPU can offload many of the application parallel computations, the system architecture of a GPU-CPU-InfiniBand server does require the CPU to initiate and manage memory transfers between remote GPUs via the high speed InfiniBand network. In this paper we introduce for the first time a new innovative technology - GPUDirect that enables Tesla GPUs to transfer data via InfiniBand without the involvement of the CPU or buffer copies, hence dramatically reducing the GPU communication time and increasing overall system performance and efficiency. We also explore for the first time the performance benefits of GPUDirect using Amber and LAMMPS applications.},
+booktitle = {Proceedings of the 2011 TeraGrid Conference: Extreme Digital Discovery},
+articleno = {26},
+numpages = {1},
+keywords = {GPGPU, GPUDirect, InfiniBand, RDMA},
+location = {Salt Lake City, Utah},
+series = {TG '11}
+}
+
+@inproceedings{agostini2017,
+  author={Agostini, Elena and Rossetti, Davide and Potluri, Sreeram},
+  booktitle={2017 17th IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing (CCGRID)}, 
+  title={Offloading Communication Control Logic in GPU Accelerated Applications}, 
+  year={2017},
+  volume={},
+  number={},
+  pages={248-257},
+  doi={10.1109/CCGRID.2017.29}
+}
+
+@article{subramanian2023,
+  title={{Out-of-the-box library support for DBMS operations on GPUs}},
+  author={Subramanian, Harish Kumar Harihara and Gurumurthy, Bala and Durand, Gabriel Campero and Broneske, David and Saake, Gunter},
+  journal={Distributed and Parallel Databases},
+  pages={1--21},
+  year={2023},
+  publisher={Springer},
+  doi={10.1007/s10619-023-07431-3}
+}
+
+@article{barthels2017,
+    author = {Barthels, Claude and M\"{u}ller, Ingo and Schneider, Timo and Alonso, Gustavo and Hoefler, Torsten},
+    title = {Distributed Join Algorithms on Thousands of Cores},
+    year = {2017},
+    issue_date = {January 2017},
+    publisher = {VLDB Endowment},
+    volume = {10},
+    number = {5},
+    issn = {2150-8097},
+    url = {https://doi.org/10.14778/3055540.3055545},
+    doi = {10.14778/3055540.3055545},
+    abstract = {Traditional database operators such as joins are relevant not only in the context of database engines but also as a building block in many computational and machine learning algorithms. With the advent of big data, there is an increasing demand for efficient join algorithms that can scale with the input data size and the available hardware resources.In this paper, we explore the implementation of distributed join algorithms in systems with several thousand cores connected by a low-latency network as used in high performance computing systems or data centers. We compare radix hash join to sort-merge join algorithms and discuss their implementation at this scale. In the paper, we explain how to use MPI to implement joins, show the impact and advantages of RDMA, discuss the importance of network scheduling, and study the relative performance of sorting vs. hashing. The experimental results show that the algorithms we present scale well with the number of cores, reaching a throughput of 48.7 billion input tuples per second on 4,096 cores.},
+    journal = {Proc. VLDB Endow.},
+    month = {jan},
+    pages = {517–528},
+    numpages = {12}
+}
+
+@article{li2020,
+  author={Li, Ang and Song, Shuaiwen Leon and Chen, Jieyang and Li, Jiajia and Liu, Xu and Tallent, Nathan R. and Barker, Kevin J.},
+  journal={IEEE Transactions on Parallel and Distributed Systems}, 
+  title={{Evaluating Modern GPU Interconnect: PCIe, NVLink, NV-SLI, NVSwitch and GPUDirect}}, 
+  year={2020},
+  volume={31},
+  number={1},
+  pages={94-110},
+  doi={10.1109/TPDS.2019.2928289}
+}
+
+@inproceedings{potluri2017,
+  author={Potluri, Sreeram and Goswami, Anshuman and Rossetti, Davide and Newburn, C.J. and Venkata, Manjunath Gorentla and Imam, Neena},
+  booktitle={2017 IEEE 24th International Conference on High Performance Computing (HiPC)}, 
+  title={{GPU-Centric Communication on NVIDIA GPU Clusters with InfiniBand: A Case Study with OpenSHMEM}}, 
+  year={2017},
+  pages={253-262},
+  doi={10.1109/HiPC.2017.00037}
+}
+
+@article{macarthur2017,
+  author={MacArthur, Patrick and Liu, Qian and Russell, Robert D. and Mizero, Fabrice and Veeraraghavan, Malathi and Dennis, John M.},
+  journal={IEEE Communications Surveys & Tutorials}, 
+  title={An Integrated Tutorial on InfiniBand, Verbs, and MPI}, 
+  year={2017},
+  volume={19},
+  number={4},
+  pages={2894-2926},
+  doi={10.1109/COMST.2017.2746083}
+}
+
+@article{liu2019,
+    author = {Liu, Feilong and Yin, Lingyan and Blanas, Spyros},
+    title = {{Design and Evaluation of an RDMA-Aware Data Shuffling Operator for Parallel Database Systems}},
+    year = {2019},
+    issue_date = {December 2019},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    volume = {44},
+    number = {4},
+    issn = {0362-5915},
+    url = {https://doi.org/10.1145/3360900},
+    doi = {10.1145/3360900},
+    abstract = {The commoditization of high-performance networking has sparked research interest in the RDMA capability of this hardware. One-sided RDMA primitives, in particular, have generated substantial excitement due to the ability to directly access remote memory from within an application without involving the TCP/IP stack or the remote CPU. This article considers how to leverage RDMA to improve the analytical performance of parallel database systems. To shuffle data efficiently using RDMA, one needs to consider a complex design space that includes (1) the number of open connections, (2) the contention for the shared network interface, (3) the RDMA transport function, and (4) how much memory should be reserved to exchange data between nodes during query processing. We contribute eight designs that capture salient tradeoffs in this design space as well as an adaptive algorithm to dynamically manage RDMA-registered memory. We comprehensively evaluate how transport-layer decisions impact the query performance of a database system for different generations of InfiniBand. We find that a shuffling operator that uses the RDMA Send/Receive transport function over the Unreliable Datagram transport service can transmit data up to 4\texttimes{} faster than an RDMA-capable MPI implementation in a 16-node cluster. The response time of TPC-H queries improves by as much as 2\texttimes{}.},
+    journal = {ACM Trans. Database Syst.},
+    month = {dec},
+    articleno = {17},
+    numpages = {45},
+    keywords = {Data shuffling, parallel database systems, RDMA}
+}
+
+@book{kounev2020systems,
+  title={Systems Benchmarking},
+  author={Kounev, Samuel and Lange, Klaus-Dieter and Von Kistowski, Joakim},
+  year={2020},
+  publisher={Springer},
+  doi = {10.1007/978-3-030-41705-5}
+}
+
+@online{NVIDIA2022,
+  author = {{NVIDIA Corporation}},
+  title = {{Improving Network Performance of HPC Systems Using NVIDIA Magnum IO NVSHMEM and GPUDirect Async}},
+  year = {2022},
+  url = {https://developer.nvidia.com/blog/improving-network-performance-of-hpc-systems-using-nvidia-magnum-io-nvshmem-and-gpudirect-async/},
+  urldate = {2023-09-30}
+}
+
+@online{NVSHMEM2023,
+    author = {{NVIDIA Corporation}},
+    title = {{NVIDIA OpenSHMEM Library (NVSHMEM) Documentation}},
+    year = {2023},
+    url = {https://docs.nvidia.com/nvshmem/api/index.html},
+    urldate = {2023-09-30}
+}

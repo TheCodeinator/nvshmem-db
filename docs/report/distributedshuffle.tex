@@ -1,0 +1,139 @@
+
+In this chapter, we explain different algorithms relevant for shuffling in distributed database management systems of which we utilize some later in our implementation in Section \ref{sec:impl}.
+
+The distributed shuffle is an important building block for many distributed data base algorithms such as joins and aggregations.
+For a join, tuples with the same join key must be present on the same node.
+Ideally, no data movement is necessary when using hash-partitioning on the join key: tuples are assigned to nodes based on the hash of their join key at the time of inserting them into the database.
+However, this is not always possible because queries can use arbitrary columns as join keys but only one column can be chosen for the partitioning key.
+Consequently, distributed databases have to use a shuffling algorithm to move tuples with the same key to the same node before joining those tuples.
+In the following, we will step-by-step explore different algorithms for distributed shuffling
+
+\subsection{Basic Single-threaded Scan with Two-sided communication}
+
+To begin simple, we start with a single-threaded scan algorithm with send-receive communication.
+In this algorithm, each process scans the data and performs two operations for each tuple one after another:
+(1) determine its destination by calculating a hash on the shuffle key and
+(2) send the tuple to the destination node.
+While doing that, each process runs a receiver thread that waits for incoming messages from other nodes and stores them in a local array.
+This algorithm suffers from multiple issues:
+(1) the receiver uses compute resources for receiving data,
+(2) the scan is single-threaded and therefore rather slow,
+(3) depending on the networking primitives used, tuple-wise sending may be slow because it causes much control flow and metadata overhead,
+and (4) scanning the data and sending data happen sequentially alternating, making the sending thread wait for the send operations to finish before continuing with the next tuple, thereby leaving the compute and network resources idle in the respective intervals.
+
+\subsection{One-sided Communication}
+\label{sec:shuffle:single-thread-one-sided}
+
+Let us try to mitigate the first issue the previous algorithm and use one-sided communication between the nodes, meaning the sender stores the data directly at a specific place at the receiver (can implemented using RDMA).
+In order to do that, the sender needs to know the correct storage location on the receiver.
+Since each node may receive data from multiple other nodes, the send operation must be coordinated.
+One approach is to use one receive buffer per node and synchronize the remote accesses of the senders, such that each sender is atomically incrementing the current offset into the array, thereby preventing any data races.
+The downside of this approach is that distributed atomic operations are very costly to implement.
+Another approach is to split the receive buffer into distinct parts for each peer per node.
+Then each process can write into its assigned receive buffer at the remote nodes without having to synchronize with the other processes because they write to different locations in the same buffer.
+In order to use this technique, each node must know where its part in the receiver's buffer begins.
+To compute this information, each process must determine the data size it will send to each other node before actually sending it.
+For this purpose, each process has to scan the data once and compute a histogram of how many tuples it has in its local data partition for each destination node.
+Afterwards, each node $i$ must compute its own write offset $o_{i,j}$ into the buffer of each receiver $j$ as follows:
+$$
+o_{i,j} = \sum_{i=0}^{i-1}d_{i,j}
+$$
+where $d_{i,j}$ denotes the data size that node $i$ will send to node $j$.
+Consequently, each node $i$ has to send the information $n_i$ to each other node $k$ with $k > i$.
+
+\subsection{Multi-threaded Scanning}
+
+In this implementation we parallelize the scanning of the data.
+For this purpose, each thread is assigned a subset of the local data.
+For this, we assume that the data size is divisible by the number of threads.
+If this assumption does not hold, the implementation can leave some threads idle in the last iteration.
+There are two variants of this algorithm.
+The first one uses node-local synchronization for ensuring data-race free sending to remote nodes.
+The other uses thread-level histograms and write offsets to achieve synchronization-free writing.
+While the first variant can suffer from congestion in the synchronization primitives, the second variant has a higher computational overhead and meta data overhead.
+Let us look at both variants in more detail and start with the node-level synchronizing one:
+
+In the histogram creation phase all threads on one node build one histogram.
+A possible algorithm for that is composing the histogram of $n$ atomic counters.
+Then each thread can increment the respective counter as they scan over their subset of the local data.
+Another possible algorithm for the histogram creation is to create thread-local histograms first and then merge them afterwards.
+While the first algorithm has a smaller storage complexity, the second one suffers less from synchronization overhead.
+After the histogram creation phase, the nodes exchange their histograms and build the node-level write offsets as before.
+Then each node can write synchronization-free into the respective locations at the remote nodes.
+But because each node has multiple threads sending at the same time, there must be proper intra-node synchronization.
+For this purpose, $n$ atomic write offsets \textendash{} one for each destination \textendash{} are created and incremented by the threads as they scan through their portion of the data, ensuring data race freedom.
+Note here that each thread is assigned a portion of the local tuples of known size, but the data size transferred from a particular thread to a particular node is unknown due to the key distribution.
+
+Now we will have a look at the second variant of the multi-threaded scan algorithm.
+In this algorithm we use thread-level histograms and offsets to allow for synchronization-free writing to remote nodes' storage.
+In the histogram creation phase each thread builds a histogram of how many tuples it will send to each destination node.
+Afterwards the thread-level histogram have to be merged into a node-level histogram by computing the component-wise sum of all histogram values across the threads.
+Then each node shares the relevant parts of its node-level histogram and computes the node-level write offsets as explained in Section \ref{sec:shuffle:single-thread-one-sided}.
+Furthermore, each node now also needs to compute thread-level write offsets for each destination that map distinct parts of the remote write location of one node to the individual threads on the sending node.
+Creating these offsets can be achieved via a sweep-up and sweep-down algorithm. % TODO: reference, this was shown in ADMS
+Once the thread-level offsets have been computed, each thread can write freely into its assigned remote location without the need of any inter- or intra-node synchronization.
+
+\subsection{Send Buffers}
+\label{sec:shuffle:send-buffers}
+
+As touched upon earlier, the tuple-wise sending as explained in the previous algorithm versions might not be efficient depending on the communication primitives used.
+There are mainly two factors that cause a detrimental effect on the sending performance when using tuple-wise sending: the control flow overhead and the metadata overhead.
+The control flow overhead is caused by calling the networking primitive interface, which costs few or many cycles depending on the implementation of the used primitive.
+The metadata overhead might be caused by the ratio of metadata to payload in the messages being sent to the NIC.
+If the communication primitive maps one send call to one message to the NIC, tuple-wise sending causes a high metadata overhead.
+In this case it might be a good idea for the shuffle implementation to assemble tuples to be send in buffers and send them out once they are full, thereby reducing the frequency and the total number of interface invocations and thereby reducing the metadata overhead. 
+If, however, the networking library used is already implementing such a buffering and batch-wise sending mechanism internally, implementing buffering in the shuffle algorithm might conversely have a negative impact on performance.
+In explanation, the implementation would spend cycles on assembling data in buffers just to have to buffers then be copied into a second set of buffers allocated within the networking library, thereby causing additional control flow and copying overhead.
+In this subsection, we extend the algorithm from the previous subsection by implementing buffering, assuming that there is no internal buffering implemented in the networking library used.
+Since there are many options to implement buffering, we show multiple alternatives.
+One specific buffering strategy can be assembled by choosing from the alternatives given and putting them together in one algorithm.
+
+The first thing to think about when implementing buffering for the shuffle algorithm is how many buffers to use.
+Usually, for one invocation of the networking library's primitives, it is expected to specify exactly one destination address.
+For this reason, the implementation needs at least $n$ send buffers per node for a distributed systems with $n$ nodes, one send buffer for the data going to each respective node (tuples to be kept local are modelled as sending to oneself).
+The idea is to fill the buffers up using parallelized scanning and then calling the networking primitives once per buffer as soon as they are full.
+When inserting into the buffers using multiple threads, we must take care of preventing data races (race conditions are usually accepted here since the order of inserts does not matter)
+Depending on the hardware (e.g. NVIDIA GPU) and software (e.g CUDA, NVSHMEM) one might consider using a multiple of $n$ for the number of send buffers, since it might impact the performance of the synchronization or the sending.
+For example, CUDA atomics are usually more efficient if used inside of blocks, so it might be an option to use one send buffer per block.
+Also, depending implementation of the underlying networking interface used, using more blocks for sending might or might not influence the sending performance.
+For simplicity, we assume exactly $n$ send buffers for the remainder of this section.
+Later in our implementation in Section \ref{sec:impl} we consider the other options based on the results of our benchmarks from Section \ref{sec:microbench}.
+
+The second issue to be considered is the synchronization when inserting into the buffers.
+We give three options for this purpose:
+(1) atomic insertion,
+(2) local-computation and merging
+(3) sync-free insertion with thread-level offsets.
+For the atomic insertion strategy, the algorithm needs to allocate $n$ atomic pointer variables, one for each send buffer.
+The variables store the offset to the next free position in the send buffer i.e. the position where the next tuple should be inserted.
+Whenever a thread has scanned a tuple and determined its send destination to be node $i$, it will \textit{first} atomically increment the offset for send buffer $i$ and save the value of the counter before updating it.
+Then it can safely insert the tuple into the location according to the offset before the update.
+The order is important because the threads need to first acquire their exclusive location by updating the counter before they can safely write into the buffer.
+While this synchronization approach has very low space complexity, it might suffer from congestion in the atomic operations.
+The second option for synchronization, namely local-computation and merging, is implemented as follows.
+Each thread allocates $n$ private buffers where it can insert the buffers without synchronizing with other threads.
+Once the buffers are full, the threads merge their buffers into global buffers for sending.
+Since the order of the tuples in the send buffers can be arbitrary, the merging has low computational overhead.
+However, this approach requires additional copy operations (first copy into private buffers,  then copy into global buffers) and suffers from very high space complexity, which is especially on GPUs with limited RAM and issue.
+The third approach using thread-level offsets is a little bit more sophisticated.
+For this approach, the shuffle algorithm needs to calculate offsets analogous to explained in Section \ref{sec:shuffle:single-thread-one-sided} but with a finer granularity.
+When scanning the data in the histogram creation phase, there will be created thread-level, batch-level histograms which store the information about how many tuples each thread has to send for each destination within each batch of the scanned data.
+It is not sufficient to build thread-level histograms for the entire data because the data distribution is arbitrary and therefore it is necessary to know the distribution for each send batch in order to compute offsets into the send buffers per batch.
+The information of the histograms is then used analogously to explained in Section \ref{sec:shuffle:single-thread-one-sided} to compute thread-level offsets per batch that denote the starting point for writing into the send buffer of the specific batch for a specific thread.
+The advantage of this approach is that inserting into the send buffers is fully synchronization-free, which comes with the cost of higher algorithmic complexity, more computational overhead in the histogram creation phase and space complexity for storing the thread-level, block-level histograms and offsets
+
+The presented alternatives to implementing the buffering, and the question on whether or not to use buffering, depend largely on the used hardware, software and the various parameters such as buffer size, number of buffers and number of threads and data size.
+
+\subsection{Double Buffering}
+\label{sec:shuffle:double-buffering}
+
+In this subsection we address the issue of idle times during computing and networking phases.
+When using blocking networking primitives, the computing resources idle while when a the set of send buffers is being sent out.
+Conversely, when using an asynchronous networking interface, the calls to the send primitives return immediately and the networking is done in the background.
+In order to leverage the power of non-blocking networking primitives to reduce idle times in our compute and network resources, we introduce a double buffering mechanism in our shuffle algorithm.
+For each send buffer, there is also a backup buffer of the same size.
+When the send buffers are full and are about to be sent out, they are swapped with a set of backup buffers (e.g. pointer reassignment of the array start points).
+The backup buffer, which then contains the ready-to-send data will be send out using an asynchronous networking primitive.
+Once the control returns from the non-blocking call, the threads can immediately continue scanning the data and inserting the tuples into the main send buffers.
+Before the next send iteration, the previous send operation must then be awaited by a synchronization primitive to make sure the backup buffers are reusable before swapping them with the main send buffers.
+Using this technique, we can keep the compute and network resources busy nearly all the time, thereby maximizing the throughput of the shuffle algorithm.

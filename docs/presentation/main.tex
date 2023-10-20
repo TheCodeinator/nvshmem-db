@@ -1,0 +1,558 @@
+%c.f. (also contains references to docs) https://git.ias.informatik.tu-darmstadt.de/thesis/beamer/-/blob/8c27d60b328220db8a4f64275d6f94a300b48cdc/texmf/doc/latex/tuda-ci/example/DEMO-TUDaBeamer.tex
+
+\documentclass[
+	ngerman,%globale Übergabe der Hauptsprache
+	aspectratio=169,%Beamer eigene Option zum Umschalten des Formates
+	color={accentcolor=8c},
+	logo=true,%Logo auf Folgeseiten
+	colorframetitle=true,%Akzentfarbe auch im Frametitle
+    %logofile=example-image, %Falls die Logo Dateien nicht vorliegen
+    authorontitle=true,
+	]{tudabeamer}
+\usepackage[main=english]{babel}
+
+\usepackage{tikz}
+\usetikzlibrary{3d, angles, animations, arrows, arrows.meta, arrows.spaced, automata, babel, backgrounds, bending, calc, calendar, chains, circuits.ee.IEC, circuits.logic.CDH, circuits.logic.IEC, circuits.logic.US, datavisualization, datavisualization.formats.functions, datavisualization.polar, decorations, decorations.footprints, decorations.fractals, decorations.markings, decorations.pathmorphing, decorations.pathreplacing, decorations.shapes, decorations.text, er, external, fadings, fit, fixedpointarithmetic, folding, fpu, graphs, graphs.standard, intersections, lindenmayersystems, math, matrix, patterns, patterns.meta, perspective, petri, plotmarks, positioning, quotes, rdf, scopes, shadings, shadows, shadows.blur, shapes, shapes.arrows, shapes.callouts, shapes.gates.logic.IEC, shapes.gates.logic.US, shapes.geometric, shapes.misc, shapes.multipart, shapes.symbols, spy, svg.path, through, tikzmark, topaths, trees, turtle, views}
+\tikzset{
+     %set default line width to 0.75pt
+    every picture/.style={line width=0.75pt},
+    data-box/.style={
+        draw,
+        minimum width=1.5em,
+        minimum height=1.5em,
+    },
+    hist-box/.style={
+        draw,
+        minimum width=3em,
+        minimum height=3em,
+    },
+    send-buf/.style={
+        draw=TUDa-1d,
+        dashed,
+        inner sep=0.5em,
+        thick,
+    },
+    hist-buf/.style={
+        draw=TUDa-4c,
+        dashed,
+        inner sep=1em,
+        thick,
+    },
+    cpu/.style={
+        % draw,
+        fill=TUDa-7a,
+        minimum width=8em,
+        minimum height=2em,
+        rounded corners=1em,
+    },
+    gpu/.style={
+        % draw,
+        fill=TUDa-4a,
+        minimum width=3.75em,
+        minimum height=2em,
+        rounded corners=1em,
+    },
+    nic/.style={
+        % draw,
+        fill=TUDa-2a,
+        minimum width=3.75em,
+        minimum height=2em,
+        rounded corners=1em,
+    },
+    node-box/.style={
+        draw,
+        dashed,
+        inner sep=1em,
+        thick,
+    }
+}
+
+% Der folgende Block ist nur bei pdfTeX auf Versionen vor April 2018 notwendig
+\usepackage{iftex}
+\ifPDFTeX
+\usepackage[utf8]{inputenc}%kompatibilität mit TeX Versionen vor April 2018
+\fi
+
+
+%Makros für Formatierungen der Doku
+%Im Allgemeinen nicht notwendig!
+\let\code\texttt
+
+\begin{document}
+
+\title{Benchmarking NVSHMEM for Shuffling Operations in Distributed Database Systems}
+\subtitle{Final Presentation Data Management Lab 2023}
+\author[A. Muth, A. Städing, J. Weßner, L. Wientgens]{Alexander Muth, Alexander Städing, Jonas Weßner, Luis Wientgens}
+\department{Computer Science}
+\institute{Supervisors: N. Boeschen, L. Thostrup, M. Jasny}
+
+%Fremdlogo
+%Logo Macro mit Sternchen skaliert automatisch, sodass das Logo in die Fußzeile passt
+%\logo*{\includegraphics{DM.png}}
+
+% Da das Bild frei wählbar nach Breite und/oder Höhe skaliert werden kann, werden \width/\height entsprechend gesetzt. So kann die Fläche optimal gefüllt werden.
+%Sternchenversion skaliert automatisch und beschneidet das Bild, um die Fläche zu füllen.
+\titlegraphic*{\includegraphics{images/V100.jpg}}
+
+\date{\today}
+
+\maketitle
+
+\section{Motivation}
+
+\begin{frame}{Motivation}
+\framesubtitle{GPU-initiated Communication}
+
+\vspace{1.3cm}
+\begin{columns}[onlytextwidth,c]%ohne das c ist die Ausrichtung verschoben
+
+	\column{.5\linewidth}
+	
+	\begin{figure}
+	\centering
+	\begin{tikzpicture}[x=0.5pt,y=0.5pt,scale=0.65]
+    \input{tikz/cpu_in.tex} (image)
+    \node<2->[overlay,cloud callout,callout relative pointer={(-1cm,-0.5cm)},aspect=3, align=center, line width=0.3mm, draw=black!80,  fill=red!8, scale=0.8] at (+7cm,+5.5cm) {Kernel launch\\overhead};
+    \end{tikzpicture}
+    \caption{CPU in critical path}
+    \end{figure}
+    
+	\column{.5\linewidth}
+	
+	\begin{figure}
+	    \centering
+	    \begin{tikzpicture}[x=0.5pt,y=0.5pt,scale=0.65]
+        \input{tikz/cpu_out.tex} (image)
+        \node<3->[overlay,cloud callout,callout relative pointer={(-1cm,-0.5cm)},aspect=3, align=center, line width=0.3mm, draw=black!80,  fill=green!8, scale=0.8] at (+7cm,+5.5cm) {GPU coordinates\\sending itself};
+    \end{tikzpicture}
+    \caption{CPU out of critical path}
+	\end{figure}
+	
+\end{columns}
+
+\end{frame}
+
+%\begin{frame}{The Critical Path - Motivation}
+
+% This text has been explained on previous slide, do not put it on this slide
+% Common GPU programming idiom involves launching compute-heavy kernels on Device (GPU) and returning control to Host (CPU) before next kernel is launched - CPU is in critical path 
+
+%\vbaselineskip
+
+%\begin{alertblock}{Issue}
+%Repeated kernel launches introduce a calling overhead and impeding scaling 
+%\end{alertblock}
+
+%\begin{exampleblock}{Idea}
+%Take CPU out of the critical path and initiate network transfer from GPU    
+%\end{exampleblock}
+
+%\end{frame}
+
+\begin{frame}{Motivation}
+\framesubtitle{Kernel Launch Overhead}
+
+\begin{center}
+\begin{tikzpicture}
+\centering
+\node[anchor=south west,inner sep=0](image) at(0,0){\includegraphics[width=0.6\textwidth]{images/overhead.png}};
+
+        \node<2->[overlay,cloud callout,callout relative pointer={(-1.5cm,-0.8cm)}, line width=0.3mm, draw=black!80,  fill=black!8, aspect=3, align=center, scale=0.8] at ($(image.center)+(+5cm,+2cm)$) {Kernel launches are not free};%
+
+\end{tikzpicture}
+\end{center} 
+
+\end{frame}
+
+\section{Outline}
+
+\begin{frame}{Outline}
+\begin{itemize}
+    \item Motivation
+    \item Use Case: Distributed Shuffle
+    \item Microbenchmarks and Implementation
+    \item Evaluation
+    \item Conclusion
+\end{itemize}
+\end{frame}
+
+
+\section{Background}
+
+\begin{frame}{Use Case}
+\framesubtitle{Distributed Shuffle}
+
+\begin{itemize}
+    \item Join requires same keys on same node
+\end{itemize}
+
+\begin{figure}
+    \centering
+    \begin{tikzpicture}[x=0.5pt,y=0.5pt,scale=1]
+        \input{tikz/shuffle_concept.tex}
+    \end{tikzpicture}
+
+    \caption{Principle idea of shuffling}
+\end{figure}
+
+% JW: suggestion for points to be delivered with this slide:
+% - In a dist. database system, tuples are distributed among the nodes -> each server has a partition of the total data
+% - Common and expensive (critical) DB operation is joining (finding tuples based on an equality comparison on a given column (join key))
+% - To find join partners, the tuples must be located on the same server. If they are not, they must be send over the network -> this is called shuffling.
+% - modern databases use partitioning schemes like hash partitioning, trying to locate possible join partners on the same machine. But this is only possible for one column -> Avoiding shuffling completely not possible.
+% - Shuffle input on each server: [(randomly) distributed tuples, join column]
+% - Shuffle output on each server: [for a part of the key space, all tuples having this key (including tuples that initially have been stored remotely)]
+% - Output of shuffle is input to a -local- join operator
+
+% We could think of a figure describing the above. First idea:
+% 2 Servers on left (rectangles), next to them 3 tuples each. Their join key should be clearly visible. To make it more illustrative, we could use a symbol (star, circle, rectangle, triangle) instead of numbers for the join key.
+% 2 servers on the right (the same servers but shown again on the right for better visibility)
+% left servers send (shown by arrows) tuples with same join key (symbol) to same server on the right side.
+% next to the servers on the right side, the result distribution of the tuples is shown
+
+% At some point, we have to go over the most important shuffle implementation. But this fits probably better into the section "implementation" since it will be more detailed. This slide should probably only convey a simple impression of what a shuffle is 
+
+\end{frame}
+
+
+\section{GPU-Initiated Shuffle}
+
+% \begin{frame}[c]{GPU-Initiated Shuffle}
+% \framesubtitle{Design Challenges: Balance network and compute?}
+%     \centering
+%     \begin{tikzpicture}
+%         \node[cpu] (cpu-0) {CPU};
+%         \node[gpu, below left=0.5em and -3.75em of cpu-0] (gpu-0) {GPU};
+%         \node[nic, below right=0.5em and -3.75em of cpu-0] (nic-0) {NIC};
+%         \node[node-box, fit=(cpu-0) (gpu-0) (nic-0), label={[font=\small, align=center, text width=4em]above:Node}] (node-0) {};
+    
+%         \draw[double, thick, latex'-latex'] ([xshift=1em]node-0.east)
+%         -- node [near end, right=2em] {Network}
+%         ([xshift=5em]node-0.east);
+        
+%         \node<2>[cpu, fill=TUDa-9b] (cpu-1) {CPU};
+        
+%         \node<2>[overlay,cloud callout,callout relative pointer={(-1cm,-2cm)},aspect=3, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.5] at ($(cpu-1.center)+(+2cm,+2cm)$) {Help! I'm overloaded!};
+        
+%         \node<3>[nic, below right=0.5em and -3.75em of cpu-0, fill=TUDa-9b] (nic-1) {NIC};
+        
+%         \draw<3>[double, thick, latex'-latex', draw=TUDa-9b] ([xshift=1em]node-0.east)
+%         -- node [near end, right=2em, text=TUDa-9b] {Network}
+%         ([xshift=5em]node-0.east);
+        
+%         \node<3>[overlay,cloud callout,callout relative pointer={(-1cm,-2cm)},aspect=3, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.5] at ($(node-0.east)+(+4cm,+2cm)$) {Help! I'm overloaded!};
+%     \end{tikzpicture}
+% \end{frame}
+
+
+\begin{frame}[c]{GPU-Initiated Shuffle}
+    \framesubtitle{Design Challenges}
+    \centering
+    % \node[anchor=south west,inner sep=0](image) at(0,0){\includegraphics[width=0.7\textwidth]{images/put_granularity_grid1.png}};
+    
+    \begin{tikzpicture}
+        \node (image) {\includegraphics[width=.7\textwidth]{images/gpu.png}};
+        
+        % Draw eyes
+        \fill[white] (image.center) ++(-0.6,1) circle (0.2);
+        \fill[white] (image.center) ++(0.6,1) circle (0.2);
+        
+        \fill<1>[black] (image.center) ++(-0.6,0.95) circle (0.1);
+        \fill<1>[black] (image.center) ++(0.6,0.95) circle (0.1);
+        
+        % Draw mouth with a smile
+        \draw[red, line width=2pt] (image.center) ++(-0.4,-0.8) arc [start angle=-170, end angle=-10, radius=0.4];
+        
+        \fill<2>[black] (image.center) ++(-0.55,1.05) circle (0.1);
+        \fill<2>[black] (image.center) ++(0.65,1.05) circle (0.1);
+        
+        \node<2>[overlay,cloud callout,callout relative pointer={(-1cm,-2cm)},aspect=3, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.8, align=center] at ($(image.center)+(+2cm,+4cm)$) {Coordination\\of remote memory?};
+
+
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}[c]{Shuffle Implementation}
+    \framesubtitle{Remote Write Offsets}
+    % Maybe a figure or sequence of figures that describe the previous text slide?
+    \input{tikz/shuffle_histogram}
+\end{frame}
+
+\begin{frame}[c]{GPU-Initiated Shuffle}
+\framesubtitle{Design Challenges}
+    \centering
+    \begin{tikzpicture}
+        \node (image) {\includegraphics[width=.7\textwidth]{images/gpu.png}};
+    
+        % Draw eyes
+        \fill[white] (image.center) ++(-0.6,1) circle (0.2);
+        \fill[white] (image.center) ++(0.6,1) circle (0.2);
+        
+        \fill<1>[black] (image.center) ++(-0.65,1.05) circle (0.1);
+        \fill<1>[black] (image.center) ++(0.55,1.05) circle (0.1);
+        
+        % Draw mouth with a smile
+        \draw[red, line width=2pt] (image.center) ++(-0.4,-0.8) arc [start angle=-170, end angle=-10, radius=0.4];
+        
+        \node<1>[overlay,cloud callout,callout relative pointer={(1cm,-2cm)},aspect=3, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.8, align=center] at ($(image.center)+(-2cm,+4cm)$) {Parallel sending?};
+        
+        \fill<2>[black] (image.center) ++(-0.55,1.05) circle (0.1);
+        \fill<2>[black] (image.center) ++(0.65,1.05) circle (0.1);
+        
+        \node<2>[overlay,cloud callout,callout relative pointer={(-1cm,-2cm)},aspect=3, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.8, align=center] at ($(image.center)+(+2cm,+4cm)$) {Frequency of sending?};
+    \end{tikzpicture}
+\end{frame}
+
+% --- before meeting ---
+% JW: things to be delivered using this slide:
+% - To utilize computation and network capacity optimally, we want to compute and transmit previously computed data continually.
+% - If we compute all the tuple's destination node ids in the first phase and then send the tuples in the second phase, we would leave network idle in the first phase and compute idle in the second stage -> not optimal
+% - Instead we want to transmit tuples more often to have the computation of tuples of batch i overlap with the transmission of tuples of batch i-1
+% CPU initiated shuffling would require one kernel launch per batch -> hypothesis: this has high overhead. We can show the kernel-launch-overhead-benchmark results here (if it hopefully shows that there is indeed some overhead)
+% GPU initiated shuffling: allows to initiate asynchronous send operations from inside the kernel, making it possible to overlap computation and transmission with only a single kernel.
+
+\section{Microbenchmarks and Implementation}
+
+\begin{frame}{CPU- vs GPU-initiated RDMA performance}
+    \centering
+    \begin{tikzpicture}
+        \node[anchor=south west,inner sep=0](image) at(0,0){\includegraphics[width=0.8\textwidth]{images/09_gpu_cpu_st.png}};
+        \node<2->[overlay,cloud callout,callout relative pointer={(-1.5cm,-0.8cm)}, line width=0.3mm, draw=black!80,  fill=black!8, aspect=3, align=center, scale=0.8] at ($(image.center)+(+3.5cm,+0.5cm)$) {GPU needs larger\\message size};
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}{Microbenchmarks}
+    \framesubtitle{Async Sending with Grid Size 1}
+    
+    % Speaker:
+    % - too small send sizes make no sense -> NVSHMEM does not buffer calls in background -> we should buffer before sending
+    % - Sending with one thread gives the best performance, multiple threads make things worse
+    % - performance drops again if send size too large, maybe some TLB caching issue
+    % - When having non-aligned accesses, performance is very off
+    % - -> non-trivial performance charactersistics
+    
+    \centering
+    \begin{tikzpicture}
+        \node[anchor=south west,inner sep=0](image) at(0,0){\includegraphics[width=0.7\textwidth]{images/put_granularity_grid1.png}};
+        \node<2->[overlay,cloud callout,callout relative pointer={(-1cm,-2cm)},aspect=3, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.8] at ($(image.center)+(+5cm,+2cm)$) {What about more blocks?};
+    \end{tikzpicture}
+\end{frame}
+
+% Speaker:
+% - When increasing the grid size, it is better to send with more threads
+% -> performance not easy to understand
+% -> Should use one of the configurations that is giving us 12.5 GB/s
+
+\begin{frame}{Microbenchmarks}
+    \framesubtitle{Async Sending with Grid Size 40}
+    \vspace{-5.0\lineheight}
+    \centering
+    \begin{tikzpicture}
+        \node[anchor=south west,inner sep=0] at(0,0){\includegraphics[width=0.7\textwidth]{images/put_granularity_grid40.png}};
+        \node<2->[overlay,cloud callout,callout relative pointer={(-3.1cm,-2cm)},aspect=3, align=center, line width=0.3mm, draw=black!80,  fill=black!8, scale=0.8] at ($(image.center)+(+5cm,+2cm)$) {Use multiple blocks \\ for sending in parallel!};
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}[c]{Shuffle Implementation}
+    \framesubtitle{Sending Tuples}
+    \input{tikz/shuffle_sending}
+\end{frame}
+
+\section{Evaluation}
+
+% Evaluate our shuffle -> as of right now does not show good performance
+% Show what we have done to see where the problem is located:
+% - When excluding the sending, we see that we get much higher throughputs, there must be an issue with the sending
+% - Hypothesis: Sending is not as efficient with multiple nvshmem_quiets in between. In the benchmark, we have only used one quiet in the end
+% -> We could do another benchmark with a quiet in between every put call.
+
+
+\begin{frame}[c]{Shuffle Evaluation}
+\framesubtitle{Two nodes, one GPU per node, 100Gb/s Infiniband Interconnect}
+% TODO: speech bubbles showing main takeaways
+%\begin{tikzpicture}
+%\node[anchor=south west,inner sep=0](image) %at(0,0){\includegraphics[width=7cm]{images/shuffle_throughput.png}};
+%\node<2->[anchor=south east,inner sep=0](image2) at %(200,0){\includegraphics[width=7cm]{images/blocking_nonblocking_barchart.png}};
+%\end{tikzpicture}
+    \centering
+    \begin{tikzpicture}
+        \node (shuffle-throughput) {\includegraphics[width=0.4\textwidth]{images/shuffle_throughput.png}};
+        \node[right=1em of shuffle-throughput] (scan-speed) {\includegraphics[width=0.4\linewidth]{images/scan_speed_atomic.png}};
+        \node<2->[overlay,cloud callout,callout relative pointer={(-1.5cm,-0.8cm)}, line width=0.3mm, draw=black!80,  fill=black!8, aspect=3, align=center, scale=0.8] at ($(shuffle-throughput.center)+(+4.5cm,+3.8cm)$) {May reach full link bandwidth\\with working async interface};
+    \end{tikzpicture}
+    % \subfloat{}
+    % \qquad
+    % \subfloat
+\end{frame}
+
+\section{Conclusion \& Future work}
+
+\begin{frame}{Contributions}
+
+\begin{itemize}
+    \item Explored the performance characteristics of NVSHMEM in a series of benchmarks
+    \item Build a GPU-initated shuffle algorithm and benchmark with NVSHMEM
+    \item Evaluated multiple algorithmic options for this purpose
+\end{itemize}
+   
+\end{frame}
+
+
+\begin{frame}{Conclusion}
+
+\begin{itemize}
+%    \item TBD: Evaluation of potential for dist. DBs
+    \item NVSHMEM performance is non-trivial to understand
+    \item GPU-initiated data shuffling might be used to mitigate kernel launch overhead and CPU involvement 
+    \item Limitations of our approach:\\
+    \begin{itemize}
+        \item Requires that all tuples fit into GPU memory
+    \end{itemize}
+    \item Limitations of NVSHMEM:\\
+    \begin{itemize}
+        \item HPC style-launch not natural for dist. DBs
+        \item Some functionalities are not working as documented w/ newest library version on our hardware
+    \end{itemize}
+\end{itemize}
+% - NVSHMEM has potential for dist. DBs (only valid if luis benchmark shows that kernel launch overhead -does- have a significant impact)
+% - Our implementation already incorporates multiple sophisticated techniques but must be further debugged to give an optimal performance
+% - Unsolved issue: GPU memory rather limited. If the local partition does not fit into GPU memory, we still need some kind of control flow with the CPU to feed the GPU with data (from CPU mem or from disk). Furthermore, this requires further inter-node communication to notify other nodes when part of the data has been written and can be flushed to disk. This makes it impossible to have completely sync-free sending.
+% anything else...?
+   
+\end{frame}
+
+
+\section{Credits}
+
+\begin{frame}{Credits}
+\framesubtitle{References}
+
+\begin{itemize}
+    \item [1] Nvidia, NVSHMEM Documentation, URL: https://docs.nvidia.com/nvshmem/api/, 2023
+\end{itemize}
+    
+\end{frame}
+
+\begin{frame}{Credits}
+\framesubtitle{Image Sources}
+
+\begin{itemize}
+    \item Title Slide: Nvidia Corp. \textit{https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/tesla-v100/data-center-tesla-v100-nvlink-social-image.jpg}
+\end{itemize}
+    
+\end{frame}
+
+\input{backup_slides.tex}
+
+
+
+% for reference purposes
+%\begin{frame}{Hinweis zur Ausrichtung (insbesondere columns)}
+	%Die Standardausrichtung wurde gegenüber den Beamer-Voreinstellungen von \code{c} zu \code{t} geändert. Dies bedeutet, dass Inhalt auf der Folie oben ausgerichtet wird. Dies entspricht den Vorgaben, hat allerdings den Nachteil, dass die \code{columns}-Umgebung in diesem Fall bei der Positionierung von Bildern ungewohnte Ergebnisse erzeugt.
+
+	%Die Ausrichtung kann in diesem Fall entweder global mit der Option \code{c} wieder zum Standard geändert werden, oder aber das \code{c} wird direkt an die \code{columns}-Umgebung übergeben. Zum Beispiel:
+%\begin{columns}[onlytextwidth,c]%ohne das c ist die Ausrichtung verschoben
+	%\column{.8\linewidth}
+	%\begin{itemize}
+	%	\item eins
+	%	\item zwei
+	%\end{itemize}
+	%\column{.2\linewidth}
+	%\includegraphics[width=\linewidth]{example-image}
+%\end{columns}
+%\end{frame}
+
+\end{document}
+
+% 1:
+% - Welcome to our presentation about Benchmarking NVSHMEM for distributed data shuffling
+% - My name is ..., this is ..., other authors are ..., supervisors are ...
+% 
+% 2:
+% - Let's start with a motivation of our topic: 
+% - Common scenario: CPU launches a GPU kernel for the acceleration of computation
+% - In distributed systems: GPU kernel finishes and CPU sends data to remote node
+% - Continue for next batch of the data with a new kernel
+% - Problem: CPU usage higher and kernel launch overhead
+%     - -> rather use speech bubbles for the issue and then right figure for the solution. Remove slide 3 then
+% 
+% 3:  
+% - For example, here we have plotted the execution time of calculations on the GPU using a single kernel (red) and multiple kernels (blue) for the same problem.
+% - The larger the problem gets, i.e. the more kernels we have to launch for the subproblems in the blue line, the more we suffer from the overhead of launching kernels.
+% - This is one of the things we can improve using GPU initiated communication, since the control does not have to return to the CPU for sending
+% 
+% 4:
+% - Let's look at today's outline
+% - We have just looked into a motivation for GPU-initiated network communication.
+% - Next we will explain how this can be used for the use case of distributed data shuffling
+% - After that, we will show benchmarks results of NVSHMEM communication primitives and based on that construct our own shuffle implementation using NVSHMEM for GPU-initiated communication
+% - Then, we evaluate our implementation with a benchmark and conclude the findings of our project work
+% 
+% 5:
+% - Join is one of the most common and most expensive operations in distributed database management systems
+% - So, it makes sense to optimize the join
+% - If the tuples are not distributed to the join key, they have to be redistributed, so the key matching can be performed locally. This is called shuffling
+% - Using GPUs for shuffling can make the scanning a lot faster due to massive parallelization. But we also have to optimize the sending for this network-intensive operation
+% 
+% 6: (comic)
+% - When designing a shuffle with GPU-initiated RDMA, there are several questions coming up:
+%     - coordination of remote memory?
+%     - parallel sending?
+%     - frequency of sending?
+% 
+% 7:
+% - To begin with, to understand the differenc between CPU- and GPU-initiated communication better, we have plotted the BW of one CPU thread and one GPU thread when sending data packets of different sizes using GPUDirect RDMA
+% - Since CPUs have a higher clock frequency and more specialized instruction set, they can execute the necessary control flow faster
+% - Eventually, both methods max out just below the network bandwidth, which is at 12.5 GB/s
+% - But the good news is, with GPUs we can also compute more data parallely and we might benefit from parallelized sending
+% 
+% 8:
+% - So let us take a look at how sending with multiple GPU threads parallelizes when using NVSHMEM.
+% - We see different message sizes on the x-axis and the throuput on the y-axis.
+% - First of all, we see that we need a certain minimum message size in order to get good performance. So NVSHMEM seems to not buffer calls in the background and direct tuple-wise sending is not an option. We need to assemble multiple tuples in a batch for sending.
+% - As one can see, it seems like for some reason the performance gets worse if we use more threads in a block
+% - But what happens if we increase the number of blocks?
+% 
+% 9:
+% - We now see that the performance of one thread for sending decreases and using more threads per block seems to be better
+% - This is one of the strange behaviours that we have seen when using NVSHMEM
+% - For our implementation, this means if we use one thread for sending and a large enough send buffer, we should get quite good and predictable behaviour
+% 
+% 10:
+% - Let's look at some important highlights of our implementation, which is inspired by the benchmark results that we have just seen
+% - Since we use one sided RDMA, we need to know what positions to write to on the destionation
+% - For this we first compute local histograms of our local key column to know how many tuples each node has for each destionation
+% - Then we exchange the histograms using the fcollect NVSHMEM primitive, which we by the way had to reimplement because it did not work in release mode
+% - Finally, we compute the offsets the prefix sum for the nodes locally
+% 
+% 11:
+% - Now that we know the remote addresses for writing, we want to rescan the data and send it.
+% - Based on our findings in the benchmarks, we use send buffers of sufficient size.
+% - For synchronization reasons, one send buffer per destination, per thread block
+% - When inserting into the buffers, we increment an atomic pointer to coordinate the GPU threads
+% - Once the buffers are full, we initiate the sending with an NVSHMEM non-blocking call and use one thread for that
+% - We thenswap buffers and continue computing right away to balance compute and networking
+% 
+% 12:
+% - We have then benchmarked our implementation of the shuffle
+% - We see that when using a larger number of threads, the performance grows, which makes sense because we scan the data at a higher rate
+% - The peak throughput we get is around 9 GB/s, (remember BW is at 12.5, also metadata not counted here)
+% - Since our goal was to get as close to BW as possible, we investigated any bottlenecks of our implementation.
+% - We saw that the scan alone without sending worked fine and was much faster than 12.5 GB/s
+% - We then found out that the NVSHMEM non-blocking interface did not work as documented in our setup.
+% - For this reason, our implementation of double buffering could not work correctly
+% - If the issue is fixed in a future library version, our implementation might get very close to 12 GB/s
+% 
+% 13:
+% - To sum up the contributions:
+% - ...
+% 
+% 14:
+% - Let us finish off with a conclusion of our project
+% - We have found out that NVSHMEMs performance is nontrivial in many ways and that this makes it hard to use it in a performant way
+% - Our implementation shows that NVSHMEM is usuable for data shuffling and might be used to reduce kernel launch overhead and CPU involvement
+% - our approach need all tuples in GPU mem at same time
+% - nvshmem is not nice for dist DBMSs in terms of launching, no runtime resource adjustment possible
+% - Some library functionalities like fcollect, signals and the non-blocking interface did not work as expected on our hardware
+% 
+% 
